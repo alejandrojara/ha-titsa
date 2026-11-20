@@ -19,7 +19,7 @@ from .utils import parse_retry_after
 
 DEFAULT_CORRESPONDENCIAS_URL = "https://titsa.com/correspondencias.php"
 DEFAULT_TIMEOUT_SECONDS = 12.0
-DEFAULT_USER_AGENT = "HomeAssistant-TITSA/0.1.0 (+https://github.com/alejandrojara/ha-titsa)"
+DEFAULT_USER_AGENT = "HomeAssistant-TITSA/20261120.0 (+https://github.com/alejandrojara/ha-titsa)"
 
 
 class TitsaRealtimeProvider(ABC):

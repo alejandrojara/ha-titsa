@@ -1,6 +1,6 @@
 [project]
 name = "ha-titsa"
-version = "0.1.0"
+version = "20261120.0"
 description = "Home Assistant custom integration for TITSA (Tenerife public bus transport)"
 readme = "README.md"
 license = { text = "MIT" }
