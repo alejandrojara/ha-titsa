@@ -6,6 +6,7 @@ from collections.abc import Mapping
 import csv
 import io
 from pathlib import Path
+from typing import IO
 import zipfile
 
 import aiohttp
@@ -88,14 +89,16 @@ def parse_lines_csv(csv_text: str) -> dict[str, LineInfo]:
     return lines
 
 
-def extract_stop_routes_from_gtfs_zip(zip_path: Path | str) -> dict[str, list[str]]:
+def extract_stop_routes_from_gtfs_zip(
+    zip_source: Path | str | IO[bytes],
+) -> dict[str, list[str]]:
     """Extract a compact stop_id -> sorted line codes mapping from a GTFS ZIP.
 
-    Designed to run in a worker thread (blocking file/ZIP I/O). Uses column-indexed
+    Designed to run in a worker thread (blocking ZIP parsing). Uses column-indexed
     csv.reader on stop_times.txt to keep RAM and CPU minimal on Raspberry Pi devices.
     """
     try:
-        with zipfile.ZipFile(zip_path) as zf:
+        with zipfile.ZipFile(zip_source) as zf:
             names = set(zf.namelist())
             required = {"routes.txt", "trips.txt", "stop_times.txt"}
             missing = required - names
@@ -161,6 +164,11 @@ def extract_stop_routes_from_gtfs_zip(zip_path: Path | str) -> dict[str, list[st
     return {
         stop_id: sorted(lines, key=line_sort_key) for stop_id, lines in sorted(stop_routes.items())
     }
+
+
+def extract_stop_routes_from_gtfs_bytes(zip_bytes: bytes) -> dict[str, list[str]]:
+    """Extract compact stop_id -> sorted line codes mapping from in-memory GTFS ZIP bytes."""
+    return extract_stop_routes_from_gtfs_zip(io.BytesIO(zip_bytes))
 
 
 def search_stops(
@@ -294,8 +302,8 @@ class TitsaOpenDataClient:
         """Return (gtfs_zip_url, metadata_modified) from CKAN."""
         return await self._async_resolve_resource(GTFS_PACKAGE_ID, "ZIP", FALLBACK_GTFS_ZIP_URL)
 
-    async def async_download_gtfs_to_file(self, url: str, dest_path: Path) -> None:
-        """Stream the GTFS ZIP archive to disk in chunks to avoid high memory usage."""
+    async def async_download_gtfs_bytes(self, url: str) -> bytes:
+        """Download the GTFS ZIP archive asynchronously without blocking file I/O."""
         try:
             async with self._session.get(
                 url,
@@ -307,9 +315,6 @@ class TitsaOpenDataClient:
                         f"HTTP {response.status} downloading GTFS ZIP from {url}",
                         status=response.status,
                     )
-                with dest_path.open("wb") as file_obj:
-                    async for chunk in response.content.iter_chunked(65536):
-                        if chunk:
-                            file_obj.write(chunk)
-        except (TimeoutError, aiohttp.ClientError, OSError) as err:
+                return await response.read()
+        except (TimeoutError, aiohttp.ClientError) as err:
             raise TitsaConnectionError(f"Error downloading GTFS ZIP from {url}: {err}") from err

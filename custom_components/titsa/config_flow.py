@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, override
 
 from homeassistant.config_entries import (
@@ -16,6 +17,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     EntitySelector,
     EntitySelectorConfig,
     SelectOptionDict,
@@ -39,6 +41,7 @@ from .api import (
 from .const import (
     CONF_LINES,
     CONF_SCHEDULE_ENTITY,
+    CONF_SEARCH_AGAIN,
     CONF_STOP_ID,
     CONF_STOP_NAME,
     CONF_STOP_QUERY,
@@ -49,6 +52,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_VALID_LINE_CODE_RE = re.compile(r"^\d{1,4}[A-Za-z]?$")
 
 
 def _flow_schema(schema: vol.Schema) -> Any:
@@ -93,6 +97,13 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
         self._stop_name: str | None = None
         self._matching_stops: list[StopInfo] = []
         self._live_lines: list[str] = []
+
+    def _reset_search_state(self) -> None:
+        """Clear selected stop state when returning to the search step."""
+        self._stop_id = None
+        self._stop_name = None
+        self._matching_stops = []
+        self._live_lines = []
 
     def _get_parent_entry(self) -> TitsaConfigEntry:
         return self._get_entry()
@@ -177,6 +188,7 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(_flow_schema(schema), user_input),
             errors=errors,
+            last_step=False,
         )
 
     async def async_step_select_stop(
@@ -188,16 +200,25 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
             return self.async_abort(reason="entry_not_loaded")
 
         catalog = entry.runtime_data.catalog
+        errors: dict[str, str] = {}
+        valid_ids = {stop.stop_id for stop in self._matching_stops}
 
         if user_input is not None:
-            selected_id = str(user_input[CONF_STOP_ID]).strip()
-            if self._is_stop_already_configured(selected_id):
-                return self.async_abort(reason="already_configured")
+            if user_input.get(CONF_SEARCH_AGAIN):
+                self._reset_search_state()
+                return await self.async_step_user()
 
-            stop = catalog.get_stop(selected_id)
-            self._stop_id = selected_id
-            self._stop_name = stop.name if stop else f"Stop {selected_id}"
-            return await self.async_step_configure()
+            selected_id = str(user_input.get(CONF_STOP_ID) or "").strip()
+            if not selected_id or selected_id not in valid_ids:
+                errors[CONF_STOP_ID] = "stop_not_found"
+            else:
+                if self._is_stop_already_configured(selected_id):
+                    return self.async_abort(reason="already_configured")
+
+                stop = catalog.get_stop(selected_id)
+                self._stop_id = selected_id
+                self._stop_name = stop.name if stop else f"Stop {selected_id}"
+                return await self.async_step_configure()
 
         options: list[SelectOptionDict] = []
         for stop in self._matching_stops:
@@ -213,20 +234,27 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_STOP_ID): SelectSelector(
+                vol.Optional(CONF_STOP_ID): SelectSelector(
                     SelectSelectorConfig(
                         options=options,
+                        custom_value=False,
                         mode=SelectSelectorMode.DROPDOWN,
                     )
-                )
+                ),
+                vol.Optional(CONF_SEARCH_AGAIN, default=False): BooleanSelector(),
             }
         )
-        return self.async_show_form(step_id="select_stop", data_schema=_flow_schema(schema))
+        return self.async_show_form(
+            step_id="select_stop",
+            data_schema=_flow_schema(schema),
+            errors=errors,
+            last_step=False,
+        )
 
     async def async_step_configure(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Step 2: Configure name, line filter, and optional schedule window."""
+        """Step 2: Configure alias, line filter, and optional schedule window."""
         entry = self._get_parent_entry()
         if entry.state is not ConfigEntryState.LOADED:
             return self.async_abort(reason="entry_not_loaded")
@@ -260,40 +288,6 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
         ):
             return self.async_abort(reason="already_configured")
 
-        if user_input is not None:
-            title = str(user_input.get(CONF_NAME) or "").strip() or f"{stop_name} ({stop_id})"
-            raw_lines = user_input.get(CONF_LINES) or []
-            if isinstance(raw_lines, str):
-                raw_lines = [raw_lines]
-            clean_lines = sorted(
-                {norm for line in raw_lines if (norm := normalize_line_code(str(line)))},
-                key=line_sort_key,
-            )
-            raw_schedule = user_input.get(CONF_SCHEDULE_ENTITY)
-            schedule_entity = str(raw_schedule).strip() if raw_schedule else None
-
-            subentry_data: dict[str, Any] = {
-                CONF_STOP_ID: stop_id,
-                CONF_STOP_NAME: stop_name,
-                CONF_LINES: clean_lines,
-                CONF_SCHEDULE_ENTITY: schedule_entity,
-            }
-
-            if reconfigure_subentry is not None:
-                return self.async_update_and_abort(
-                    entry,
-                    reconfigure_subentry,
-                    title=title,
-                    unique_id=stop_id,
-                    data=subentry_data,
-                )
-
-            return self.async_create_entry(
-                title=title,
-                unique_id=stop_id,
-                data=subentry_data,
-            )
-
         # Hybrid route lookup: if compact GTFS index doesn't have this stop yet,
         # opportunistically check live arrivals once to surface active lines
         existing_lines: list[str] = (
@@ -316,6 +310,60 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
             live_lines=self._live_lines,
             extra_lines=existing_lines,
         )
+        candidate_lines_set = set(candidate_lines)
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if reconfigure_subentry is None and user_input.get(CONF_SEARCH_AGAIN):
+                self._reset_search_state()
+                return await self.async_step_user()
+
+            title = str(user_input.get(CONF_NAME) or "").strip() or f"{stop_name} ({stop_id})"
+            raw_lines = user_input.get(CONF_LINES) or []
+            if isinstance(raw_lines, str):
+                raw_lines = [raw_lines]
+
+            clean_lines_set: set[str] = set()
+            for raw_line in raw_lines:
+                norm = normalize_line_code(str(raw_line))
+                if not norm:
+                    continue
+                if candidate_lines_set:
+                    if norm not in candidate_lines_set:
+                        errors[CONF_LINES] = "invalid_line"
+                        break
+                elif not _VALID_LINE_CODE_RE.match(norm):
+                    errors[CONF_LINES] = "invalid_line"
+                    break
+                clean_lines_set.add(norm)
+
+            if not errors:
+                clean_lines = sorted(clean_lines_set, key=line_sort_key)
+                raw_schedule = user_input.get(CONF_SCHEDULE_ENTITY)
+                schedule_entity = str(raw_schedule).strip() if raw_schedule else None
+
+                subentry_data: dict[str, Any] = {
+                    CONF_STOP_ID: stop_id,
+                    CONF_STOP_NAME: stop_name,
+                    CONF_LINES: clean_lines,
+                    CONF_SCHEDULE_ENTITY: schedule_entity,
+                }
+
+                if reconfigure_subentry is not None:
+                    return self.async_update_and_abort(
+                        entry,
+                        reconfigure_subentry,
+                        title=title,
+                        unique_id=stop_id,
+                        data=subentry_data,
+                    )
+
+                return self.async_create_entry(
+                    title=title,
+                    unique_id=stop_id,
+                    data=subentry_data,
+                )
+
         line_options = [
             SelectOptionDict(value=code, label=catalog.format_line_label(code))
             for code in candidate_lines
@@ -332,32 +380,39 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
         }
         if reconfigure_subentry is not None and reconfigure_subentry.data.get(CONF_SCHEDULE_ENTITY):
             suggested_values[CONF_SCHEDULE_ENTITY] = reconfigure_subentry.data[CONF_SCHEDULE_ENTITY]
+        if user_input is not None:
+            suggested_values.update(user_input)
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_NAME): TextSelector(
-                    TextSelectorConfig(type=TextSelectorType.TEXT)
-                ),
-                vol.Optional(CONF_LINES, default=[]): SelectSelector(
-                    SelectSelectorConfig(
-                        options=line_options,
-                        multiple=True,
-                        custom_value=True,
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional(CONF_SCHEDULE_ENTITY): EntitySelector(
-                    EntitySelectorConfig(domain=SCHEDULE_ENTITY_DOMAINS)
-                ),
-            }
-        )
+        schema_fields: dict[Any, Any] = {
+            vol.Optional(CONF_LINES, default=[]): SelectSelector(
+                SelectSelectorConfig(
+                    options=line_options,
+                    multiple=True,
+                    # Strictly restrict to valid dropdown lines whenever catalog/live lines exist
+                    custom_value=not bool(line_options),
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(CONF_SCHEDULE_ENTITY): EntitySelector(
+                EntitySelectorConfig(domain=SCHEDULE_ENTITY_DOMAINS)
+            ),
+            vol.Optional(CONF_NAME): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+        }
+        if reconfigure_subentry is None:
+            schema_fields[vol.Optional(CONF_SEARCH_AGAIN, default=False)] = BooleanSelector()
+
         return self.async_show_form(
             step_id="configure",
-            data_schema=self.add_suggested_values_to_schema(_flow_schema(schema), suggested_values),
+            data_schema=self.add_suggested_values_to_schema(
+                _flow_schema(vol.Schema(schema_fields)),
+                suggested_values,
+            ),
+            errors=errors,
             description_placeholders={
                 "stop_id": stop_id,
                 "stop_name": stop_name,
             },
+            last_step=True,
         )
 
     async def async_step_reconfigure(

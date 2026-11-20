@@ -80,3 +80,41 @@ async def test_web_provider_503_and_404_and_network_error() -> None:
     session.get = MagicMock(side_effect=aiohttp.ClientError("connection reset"))
     with pytest.raises(TitsaConnectionError):
         await provider.async_get_stop_arrivals("1580")
+
+
+async def test_web_provider_ssl_fallback_on_incomplete_cert_chain(html_1580: str) -> None:
+    """Fall back lazily to unverified HTTPS session on ClientConnectorSSLError and reuse it."""
+    verified_session = MagicMock(spec=aiohttp.ClientSession)
+    conn_key = MagicMock()
+    ssl_error = aiohttp.ClientConnectorSSLError(
+        conn_key, OSError("unable to get local issuer certificate")
+    )
+    verified_session.get = MagicMock(side_effect=ssl_error)
+
+    unverified_session = MagicMock(spec=aiohttp.ClientSession)
+    unverified_session.get = MagicMock(return_value=_mock_response(200, html_1580.encode("utf-8")))
+    factory_calls = 0
+
+    def _factory() -> aiohttp.ClientSession:
+        nonlocal factory_calls
+        factory_calls += 1
+        return unverified_session
+
+    provider = TitsaWebProvider(verified_session, fallback_session_factory=_factory)
+    assert provider.ssl_fallback_active is False
+
+    # First call fails TLS on verified session, activates fallback, and succeeds immediately
+    result = await provider.async_get_stop_arrivals("1580")
+    assert result.stop_id == "1580"
+    assert len(result.arrivals) == 4
+    assert provider.ssl_fallback_active is True
+    assert factory_calls == 1
+    assert verified_session.get.call_count == 1
+    assert unverified_session.get.call_count == 1
+
+    # Second call uses unverified session directly without hitting verified_session again
+    result2 = await provider.async_get_stop_arrivals("1580")
+    assert result2.stop_id == "1580"
+    assert verified_session.get.call_count == 1
+    assert unverified_session.get.call_count == 2
+    assert factory_calls == 1

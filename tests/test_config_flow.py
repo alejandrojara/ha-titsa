@@ -11,6 +11,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.titsa.const import (
     CONF_LINES,
     CONF_SCHEDULE_ENTITY,
+    CONF_SEARCH_AGAIN,
     CONF_STOP_ID,
     CONF_STOP_NAME,
     CONF_STOP_QUERY,
@@ -59,6 +60,7 @@ async def test_stop_subentry_flow_direct_code(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
+    assert result["last_step"] is False
 
     # Enter exact stop ID -> jumps directly to configure
     result = await hass.config_entries.subentries.async_configure(
@@ -67,13 +69,14 @@ async def test_stop_subentry_flow_direct_code(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "configure"
+    assert result["last_step"] is True
     assert result["description_placeholders"]["stop_id"] == "1580"
 
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         {
             CONF_NAME: "Nuevo Obrero Casa",
-            CONF_LINES: ["936", "0238"],
+            CONF_LINES: ["936", "238"],
             CONF_SCHEDULE_ENTITY: "schedule.mananas",
         },
     )
@@ -241,3 +244,97 @@ async def test_stop_subentry_flow_aborts_when_entry_not_loaded(
     )
     assert flow["type"] is FlowResultType.ABORT
     assert flow["reason"] == "entry_not_loaded"
+
+
+async def test_stop_subentry_flow_search_again_from_select_and_configure(
+    hass: HomeAssistant,
+    mock_titsa_network,
+    sample_stop_routes,
+) -> None:
+    """Enabling search_again returns cleanly to step user without creating a subentry."""
+    entry = MockConfigEntry(domain=DOMAIN, title="TITSA", data={})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    entry.runtime_data.catalog.data.stop_routes.update(sample_stop_routes)
+
+    # Start search matching two stops -> select_stop
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_STOP),
+        context={"source": SOURCE_USER},
+    )
+    flow = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"], {CONF_STOP_QUERY: "nuevo obrero"}
+    )
+    assert flow["type"] is FlowResultType.FORM
+    assert flow["step_id"] == "select_stop"
+    assert flow["last_step"] is False
+
+    # Request new search from select_stop -> back to user
+    flow = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"], {CONF_SEARCH_AGAIN: True}
+    )
+    assert flow["type"] is FlowResultType.FORM
+    assert flow["step_id"] == "user"
+
+    # Search exact code 1580 -> configure, then go back to user via search_again
+    flow = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"], {CONF_STOP_QUERY: "1580"}
+    )
+    assert flow["type"] is FlowResultType.FORM
+    assert flow["step_id"] == "configure"
+
+    flow = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"],
+        {
+            CONF_NAME: "No debe guardarse",
+            CONF_LINES: [],
+            CONF_SEARCH_AGAIN: True,
+        },
+    )
+    assert flow["type"] is FlowResultType.FORM
+    assert flow["step_id"] == "user"
+    assert len(entry.subentries) == 0
+
+
+async def test_stop_subentry_flow_rejects_invalid_line_when_catalog_empty(
+    hass: HomeAssistant,
+    mock_titsa_network,
+) -> None:
+    """When Open Data catalog is empty (custom_value fallback), invalid line text is rejected."""
+    entry = MockConfigEntry(domain=DOMAIN, title="TITSA", data={})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Empty catalog & empty live arrivals -> triggers custom_value=True with regex validation
+    entry.runtime_data.catalog.data.lines.clear()
+    entry.runtime_data.catalog.data.stop_routes.clear()
+    mock_fetch, _ = mock_titsa_network
+    mock_fetch.return_value = mock_fetch.return_value.__class__(
+        stop_id="1580",
+        stop_name="Nuevo Obrero",
+        estimation_time=mock_fetch.return_value.estimation_time,
+        arrivals=(),
+    )
+
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_STOP),
+        context={"source": SOURCE_USER},
+    )
+    flow = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"], {CONF_STOP_QUERY: "1580"}
+    )
+    assert flow["step_id"] == "configure"
+
+    # Invalid arbitrary text in lines is rejected instead of creating a broken subentry
+    flow = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"],
+        {
+            CONF_NAME: "Nuevo Obrero (1580)",
+            CONF_LINES: ["texto invalido"],
+        },
+    )
+    assert flow["type"] is FlowResultType.FORM
+    assert flow["step_id"] == "configure"
+    assert flow["errors"] == {CONF_LINES: "invalid_line"}

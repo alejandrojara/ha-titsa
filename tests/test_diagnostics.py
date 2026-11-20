@@ -46,6 +46,8 @@ async def test_diagnostics_output(
     diag = await async_get_config_entry_diagnostics(hass, entry)
 
     assert diag["entry"]["subentries_count"] == 1
+    assert diag["provider"]["type"] == "TitsaWebProvider"
+    assert diag["provider"]["ssl_fallback_active"] is False
     assert diag["catalog"]["stops_count"] == 6
     assert diag["catalog"]["lines_count"] == 6
     assert len(diag["stops"]) == 1

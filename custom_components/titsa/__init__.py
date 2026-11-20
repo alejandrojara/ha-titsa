@@ -48,6 +48,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TitsaConfigEntry) -> boo
 
     provider = TitsaWebProvider(
         session,
+        fallback_session_factory=lambda: async_get_clientsession(hass, verify_ssl=False),
         semaphore=semaphore,
         timeout=HTTP_TIMEOUT_SECONDS,
         user_agent=USER_AGENT,

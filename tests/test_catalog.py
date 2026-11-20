@@ -1,8 +1,8 @@
-"""Tests for TitsaCatalogStore (.storage caching, GTFS background extraction, hybrid fallback)."""
+"""Tests for TitsaCatalogStore (.storage caching, in-memory GTFS extraction, hybrid fallback)."""
 
 from __future__ import annotations
 
-from pathlib import Path
+import io
 from unittest.mock import AsyncMock
 import zipfile
 
@@ -12,8 +12,9 @@ from custom_components.titsa.api import TitsaConnectionError, TitsaOpenDataClien
 from custom_components.titsa.catalog import TitsaCatalogStore
 
 
-def _write_sample_gtfs(dest: Path) -> None:
-    with zipfile.ZipFile(dest, "w") as zf:
+def _build_sample_gtfs_bytes() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr(
             "routes.txt",
             "route_id,agency_id,route_short_name,route_long_name,route_type\n"
@@ -30,6 +31,7 @@ def _write_sample_gtfs(dest: Path) -> None:
             "t1,07:00:00,07:00:00,1580,1\n"
             "t2,07:05:00,07:05:00,1580,2\n",
         )
+    return buf.getvalue()
 
 
 async def test_catalog_csv_cache_and_gtfs_extraction(
@@ -37,7 +39,7 @@ async def test_catalog_csv_cache_and_gtfs_extraction(
     sample_stops,
     sample_lines,
 ) -> None:
-    """Verify CSV caching, GTFS temp-file extraction, and hybrid route lookup."""
+    """Verify CSV caching, non-blocking in-memory GTFS extraction, and hybrid route lookup."""
     client = AsyncMock(spec=TitsaOpenDataClient)
     client.async_fetch_stops.return_value = sample_stops
     client.async_fetch_lines.return_value = sample_lines
@@ -45,11 +47,7 @@ async def test_catalog_csv_cache_and_gtfs_extraction(
         "https://datos.tenerife.es/mock.zip",
         "2026-11-20T00:00:46",
     )
-
-    async def _fake_download(url: str, dest_path: Path) -> None:
-        _write_sample_gtfs(dest_path)
-
-    client.async_download_gtfs_to_file.side_effect = _fake_download
+    client.async_download_gtfs_bytes.return_value = _build_sample_gtfs_bytes()
 
     catalog = TitsaCatalogStore(hass, client)
     assert await catalog.async_ensure_csv_fresh() is True
@@ -67,10 +65,10 @@ async def test_catalog_csv_cache_and_gtfs_extraction(
     assert await catalog.async_ensure_csv_fresh() is True
     assert client.async_fetch_stops.call_count == 1
 
-    # Build GTFS compact index
+    # Build GTFS compact index (pure async download + executor extraction, zero open() on loop)
     assert await catalog.async_refresh_gtfs_index() is True
     assert catalog.has_gtfs_index is True
-    assert client.async_download_gtfs_to_file.call_count == 1
+    assert client.async_download_gtfs_bytes.call_count == 1
 
     # Now lookup returns exact stop-specific routes merged with any live line
     stop_lines, is_specific = catalog.get_routes_for_stop("1580", live_lines=["975"])
@@ -80,7 +78,7 @@ async def test_catalog_csv_cache_and_gtfs_extraction(
     # If metadata_modified is unchanged, even after staleness it skips re-downloading ZIP
     catalog.data.gtfs_updated_at = "2020-01-01T00:00:00+00:00"
     assert await catalog.async_refresh_gtfs_index() is True
-    assert client.async_download_gtfs_to_file.call_count == 1
+    assert client.async_download_gtfs_bytes.call_count == 1
 
 
 async def test_catalog_survives_open_data_outage(hass: HomeAssistant) -> None:
@@ -89,7 +87,7 @@ async def test_catalog_survives_open_data_outage(hass: HomeAssistant) -> None:
     client.async_fetch_stops.side_effect = TitsaConnectionError("timeout")
     client.async_fetch_lines.side_effect = TitsaConnectionError("timeout")
     client.async_get_gtfs_metadata.return_value = ("https://example.invalid/gtfs.zip", None)
-    client.async_download_gtfs_to_file.side_effect = TitsaConnectionError("timeout")
+    client.async_download_gtfs_bytes.side_effect = TitsaConnectionError("timeout")
 
     catalog = TitsaCatalogStore(hass, client)
     assert await catalog.async_ensure_csv_fresh() is False

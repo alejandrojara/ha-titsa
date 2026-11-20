@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from datetime import UTC, datetime
 import logging
-from pathlib import Path
-import tempfile
 import time
 
 from homeassistant.core import HomeAssistant
@@ -19,7 +16,7 @@ from .api import (
     StopInfo,
     TitsaError,
     TitsaOpenDataClient,
-    extract_stop_routes_from_gtfs_zip,
+    extract_stop_routes_from_gtfs_bytes,
     line_sort_key,
     normalize_line_code,
     search_stops,
@@ -145,7 +142,7 @@ class TitsaCatalogStore:
             return True
 
     async def async_refresh_gtfs_index(self, *, force: bool = False) -> bool:
-        """Build or refresh compact stop_id -> routes index from the GTFS ZIP."""
+        """Build or refresh compact stop_id -> routes index from the GTFS ZIP without event-loop I/O."""
         await self.async_load()
         if not force and self._data.stop_routes and not _is_stale(self._data.gtfs_updated_at):
             self._gtfs_ready_event.set()
@@ -156,10 +153,9 @@ class TitsaCatalogStore:
                 self._gtfs_ready_event.set()
                 return True
 
-            temp_path: Path | None = None
             try:
                 gtfs_url, modified = await self._client.async_get_gtfs_metadata()
-                # Skip heavy 21 MB download if CKAN metadata_modified hasn't changed
+                # Skip 21 MB download if CKAN metadata_modified hasn't changed
                 if (
                     not force
                     and self._data.stop_routes
@@ -171,14 +167,9 @@ class TitsaCatalogStore:
                     self._gtfs_ready_event.set()
                     return True
 
-                with tempfile.NamedTemporaryFile(
-                    prefix="titsa_gtfs_", suffix=".zip", delete=False
-                ) as tmp:
-                    temp_path = Path(tmp.name)
-
-                await self._client.async_download_gtfs_to_file(gtfs_url, temp_path)
+                gtfs_bytes = await self._client.async_download_gtfs_bytes(gtfs_url)
                 stop_routes = await self._hass.async_add_executor_job(
-                    extract_stop_routes_from_gtfs_zip, temp_path
+                    extract_stop_routes_from_gtfs_bytes, gtfs_bytes
                 )
             except TitsaError as err:
                 _LOGGER.warning(
@@ -186,10 +177,6 @@ class TitsaCatalogStore:
                     err,
                 )
                 return bool(self._data.stop_routes)
-            finally:
-                if temp_path is not None:
-                    with contextlib.suppress(OSError):
-                        temp_path.unlink(missing_ok=True)
 
             self._data.stop_routes = stop_routes
             self._data.gtfs_updated_at = datetime.now(UTC).isoformat()

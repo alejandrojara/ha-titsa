@@ -25,12 +25,13 @@
       },
       "error": {
         "cannot_connect": "Could not connect to TITSA. Please try again in a moment.",
+        "invalid_line": "One or more entered lines are not valid for this stop. Pick valid lines from the dropdown.",
         "stop_not_found": "No matching bus stop was found. Check the stop code or try a different name."
       },
       "step": {
         "user": {
           "title": "Find a TITSA bus stop",
-          "description": "Enter the numeric stop code (e.g. 1580) or search by stop name (e.g. Nuevo Obrero).",
+          "description": "Enter the numeric stop code (e.g. 1580) or part of the stop name (e.g. Nuevo Obrero) and click Next to search.",
           "data": {
             "stop_query": "Stop code or name"
           },
@@ -40,23 +41,29 @@
         },
         "select_stop": {
           "title": "Select bus stop",
-          "description": "Multiple stops matched your search. Choose the exact stop (check the stop code and routes for the right direction).",
+          "description": "Multiple stops matched your search. Choose the exact stop (check the stop code and routes for the right direction) or enable 'Search for a different stop' to try again.",
           "data": {
-            "stop_id": "Bus stop"
+            "stop_id": "Matching bus stop",
+            "search_again": "Search for a different stop"
+          },
+          "data_description": {
+            "search_again": "Enable this option and continue to return to the stop search without selecting a stop."
           }
         },
         "configure": {
           "title": "Configure stop {stop_id}",
-          "description": "Configure monitoring options for {stop_name} ({stop_id}). Leave lines empty to follow all lines arriving at this stop.",
+          "description": "Selected stop: {stop_name} ({stop_id}). Choose optional line filters and schedule window below, or enable 'Search for a different stop' to go back.",
           "data": {
-            "name": "Stop name",
             "lines": "Filter lines (optional)",
-            "schedule_entity": "Active schedule / window entity (optional)"
+            "schedule_entity": "Active schedule / window entity (optional)",
+            "name": "Custom display name in Home Assistant (alias)",
+            "search_again": "Search for a different stop (go back)"
           },
           "data_description": {
-            "name": "Display name for this stop device in Home Assistant.",
-            "lines": "Select specific lines to filter. An individual sensor is created for each selected line; leave empty to track all lines with a single aggregated sensor.",
-            "schedule_entity": "Optional Schedule, Binary Sensor, or Input Boolean helper. When off, polling pauses completely (0 HTTP requests) and entities stay unknown instead of unavailable."
+            "lines": "Select specific valid lines for this stop. An individual sensor is created for each selected line; leave empty to track all lines with a single aggregated sensor.",
+            "schedule_entity": "Optional Schedule, Binary Sensor, or Input Boolean helper. When off, polling pauses completely (0 HTTP requests) and entities stay unknown instead of unavailable.",
+            "name": "Only changes the device display name in Home Assistant; it does not change the selected bus stop.",
+            "search_again": "Enable this option and submit to return to the stop search without saving."
           }
         }
       }

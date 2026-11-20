@@ -14,6 +14,7 @@ from .exceptions import (
 from .models import BusArrival, CatalogData, LineInfo, StopArrivals, StopInfo
 from .open_data import (
     TitsaOpenDataClient,
+    extract_stop_routes_from_gtfs_bytes,
     extract_stop_routes_from_gtfs_zip,
     parse_lines_csv,
     parse_stops_csv,
@@ -45,6 +46,7 @@ __all__ = [
     "TitsaStopNotFoundError",
     "TitsaWebProvider",
     "clean_titsa_stop_name",
+    "extract_stop_routes_from_gtfs_bytes",
     "extract_stop_routes_from_gtfs_zip",
     "line_sort_key",
     "normalize_line_code",

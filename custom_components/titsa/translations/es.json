@@ -25,12 +25,13 @@
       },
       "error": {
         "cannot_connect": "No se pudo conectar con TITSA. Inténtalo de nuevo en unos instantes.",
+        "invalid_line": "Alguna de las líneas indicadas no es válida para esta parada. Selecciona líneas válidas del desplegable.",
         "stop_not_found": "No se encontró ninguna parada coincidente. Comprueba el código de parada o prueba con otro nombre."
       },
       "step": {
         "user": {
           "title": "Buscar parada de TITSA",
-          "description": "Introduce el código numérico de la parada (por ejemplo, 1580) o busca por nombre (por ejemplo, Nuevo Obrero).",
+          "description": "Introduce el código numérico de la parada (por ejemplo, 1580) o parte del nombre (por ejemplo, Nuevo Obrero) y pulsa Siguiente para buscar.",
           "data": {
             "stop_query": "Código o nombre de parada"
           },
@@ -40,23 +41,29 @@
         },
         "select_stop": {
           "title": "Seleccionar parada",
-          "description": "Varias paradas coinciden con tu búsqueda. Elige la parada exacta comprobando el código y las líneas de tu sentido.",
+          "description": "Varias paradas coinciden con tu búsqueda. Elige la parada exacta (comprueba el código y las líneas de tu sentido) o activa «Buscar otra parada» para volver al buscador.",
           "data": {
-            "stop_id": "Parada"
+            "stop_id": "Parada coincidente",
+            "search_again": "Buscar otra parada"
+          },
+          "data_description": {
+            "search_again": "Activa esta opción y pulsa Siguiente para volver al buscador sin seleccionar parada."
           }
         },
         "configure": {
           "title": "Configurar parada {stop_id}",
-          "description": "Configura las opciones de seguimiento para {stop_name} ({stop_id}). Deja las líneas vacías para seguir todas las guaguas que pasen por la parada.",
+          "description": "Parada seleccionada: {stop_name} ({stop_id}). Elige las líneas y ventana horaria opcionales, o activa «Buscar otra parada» para volver al buscador sin guardar.",
           "data": {
-            "name": "Nombre de la parada",
             "lines": "Filtrar líneas (opcional)",
-            "schedule_entity": "Entidad de ventana horaria activa (opcional)"
+            "schedule_entity": "Entidad de ventana horaria activa (opcional)",
+            "name": "Nombre personalizado en Home Assistant (alias)",
+            "search_again": "Buscar otra parada (volver al buscador)"
           },
           "data_description": {
-            "name": "Nombre visible para el dispositivo de esta parada en Home Assistant.",
-            "lines": "Selecciona líneas concretas para filtrar. Se creará un sensor individual por cada línea seleccionada; déjalo vacío para seguir todas con un único sensor agregado.",
-            "schedule_entity": "Helper opcional Schedule, Binary Sensor o Input Boolean. Cuando esté en off, el sondeo se pausa por completo (0 peticiones HTTP) y las entidades pasan a desconocido sin marcarse como no disponibles."
+            "lines": "Selecciona líneas válidas de esta parada. Se creará un sensor individual por cada línea seleccionada; déjalo vacío para seguir todas con un único sensor agregado.",
+            "schedule_entity": "Helper opcional Schedule, Binary Sensor o Input Boolean. Cuando esté en off, el sondeo se pausa por completo (0 peticiones HTTP) y las entidades pasan a desconocido sin marcarse como no disponibles.",
+            "name": "Solo cambia el nombre visible del dispositivo en Home Assistant; no modifica la parada seleccionada.",
+            "search_again": "Activa esta opción y pulsa Enviar para volver al buscador de paradas sin guardar."
           }
         }
       }

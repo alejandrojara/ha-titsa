@@ -16,6 +16,7 @@ CONF_STOP_NAME = "stop_name"
 CONF_STOP_QUERY = "stop_query"
 CONF_LINES = "lines"
 CONF_SCHEDULE_ENTITY = "schedule_entity"
+CONF_SEARCH_AGAIN = "search_again"
 
 # Polling & protection constants
 DEFAULT_SCAN_INTERVAL_SECONDS = 90
