@@ -67,7 +67,7 @@ class TitsaNextBusSensor(TitsaStopEntity, SensorEntity):
     _attr_icon = "mdi:bus-clock"
     _attr_translation_key = "next_bus"
     _unrecorded_attributes = frozenset(
-        {"arrivals", "filtered_lines", "last_estimation", "next_line_name"}
+        {"arrivals", "filtered_lines", "last_estimation", "manual_snapshot", "next_line_name"}
     )
 
     def __init__(self, coordinator: TitsaStopCoordinator) -> None:
@@ -105,6 +105,7 @@ class TitsaNextBusSensor(TitsaStopEntity, SensorEntity):
                 "arrivals": [],
                 "last_estimation": None,
                 "polling_paused": False,
+                "manual_snapshot": False,
                 "schedule_entity": self.coordinator.schedule_entity,
             }
 
@@ -124,6 +125,7 @@ class TitsaNextBusSensor(TitsaStopEntity, SensorEntity):
             "arrivals": bounded_arrivals,
             "last_estimation": (data.estimation_time.isoformat() if data.estimation_time else None),
             "polling_paused": data.polling_paused,
+            "manual_snapshot": data.manual_snapshot,
             "schedule_entity": self.coordinator.schedule_entity,
         }
 

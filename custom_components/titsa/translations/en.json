@@ -20,6 +20,7 @@
       },
       "abort": {
         "already_configured": "This bus stop is already configured.",
+        "entry_not_loaded": "The TITSA integration must be loaded before adding or reconfiguring stops.",
         "reconfigure_successful": "Bus stop settings were updated."
       },
       "error": {

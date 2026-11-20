@@ -7,6 +7,7 @@ from typing import Any, override
 
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
     ConfigSubentryFlow,
@@ -112,12 +113,16 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Step 1: Search for a stop by numeric code or name."""
         entry = self._get_parent_entry()
+        if entry.state is not ConfigEntryState.LOADED:
+            return self.async_abort(reason="entry_not_loaded")
+
         runtime_data = entry.runtime_data
         catalog = runtime_data.catalog
         errors: dict[str, str] = {}
 
-        # Ensure lightweight stops/lines CSV is loaded before searching
-        await catalog.async_ensure_csv_fresh()
+        # Ensure lightweight stops/lines CSV is loaded before searching (with failure backoff)
+        if not catalog.has_stops:
+            await catalog.async_ensure_csv_fresh()
 
         if user_input is not None:
             query = str(user_input.get(CONF_STOP_QUERY) or "").strip()
@@ -179,6 +184,9 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Step 1b: Disambiguate when a text search matches multiple stops."""
         entry = self._get_parent_entry()
+        if entry.state is not ConfigEntryState.LOADED:
+            return self.async_abort(reason="entry_not_loaded")
+
         catalog = entry.runtime_data.catalog
 
         if user_input is not None:
@@ -220,6 +228,9 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Step 2: Configure name, line filter, and optional schedule window."""
         entry = self._get_parent_entry()
+        if entry.state is not ConfigEntryState.LOADED:
+            return self.async_abort(reason="entry_not_loaded")
+
         runtime_data = entry.runtime_data
         catalog = runtime_data.catalog
         reconfigure_subentry = (

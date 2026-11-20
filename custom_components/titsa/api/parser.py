@@ -14,17 +14,22 @@ from .utils import clean_titsa_stop_name, normalize_line_code, normalize_text
 CANARY_TZ = ZoneInfo("Atlantic/Canary")
 
 _STOP_HEADER_RE = re.compile(
-    r"informaci[oó]n\s+parada\s+(.+?)\s*\(\s*(\d+)\s*\)",
+    r"informaci[oó]n\s+parada\s+([^\n()]+?)\s*\(\s*(\d+)\s*\)",
+    re.IGNORECASE,
+)
+_EMPTY_STOP_HEADER_RE = re.compile(
+    r"informaci[oó]n\s+parada\s*\(\s*(\d+)\s*\)",
     re.IGNORECASE,
 )
 _CORRESP_HEADER_RE = re.compile(
-    r"correspondencias\s+en\s+(.+)",
+    r"correspondencias\s+en\s+([^\n]+)",
     re.IGNORECASE,
 )
 _ESTIMATION_RE = re.compile(
     r"estimaci[oó]n\s*:\s*(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?",
     re.IGNORECASE,
 )
+_CLOCK_TIME_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*$")
 _HOURS_MINUTES_RE = re.compile(
     r"(\d+)\s*(?:h(?:oras?)?)\s*(?:(\d+)\s*(?:m(?:in(?:utos?)?)?))?",
     re.IGNORECASE,
@@ -48,18 +53,14 @@ _NO_BUSES_MARKERS = (
 
 
 class _CorrespondenciasHTMLParser(HTMLParser):
-    """Collect tables and visible text blocks from correspondencias.php HTML."""
+    """Collect tables (including nested tables) and visible text from correspondencias.php HTML."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self._skip_depth = 0
-        self._in_table = False
-        self._in_row = False
-        self._in_cell = False
-        self._cell_is_header = False
-        self._current_cell: list[str] = []
-        self._current_row: list[tuple[bool, str]] = []
-        self._current_table: list[list[tuple[bool, str]]] = []
+        self._table_stack: list[list[list[tuple[bool, str]]]] = []
+        self._row_stack: list[list[tuple[bool, str]]] = []
+        self._cell_stack: list[tuple[bool, list[str]]] = []
         self.tables: list[list[list[tuple[bool, str]]]] = []
         self._text_parts: list[str] = []
 
@@ -71,16 +72,13 @@ class _CorrespondenciasHTMLParser(HTMLParser):
         if self._skip_depth > 0:
             return
         if tag_lower == "table":
-            self._in_table = True
-            self._current_table = []
-        elif tag_lower == "tr" and self._in_table:
-            self._in_row = True
-            self._current_row = []
-        elif tag_lower in ("td", "th") and self._in_row:
-            self._in_cell = True
-            self._cell_is_header = tag_lower == "th"
-            self._current_cell = []
-        elif tag_lower in ("br", "p", "div", "h1", "h2", "h3", "h4", "li", "tr"):
+            self._table_stack.append([])
+        elif tag_lower == "tr" and self._table_stack:
+            self._row_stack.append([])
+            self._text_parts.append("\n")
+        elif tag_lower in ("td", "th") and self._row_stack:
+            self._cell_stack.append((tag_lower == "th", []))
+        elif tag_lower in ("br", "p", "div", "h1", "h2", "h3", "h4", "li"):
             self._text_parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
@@ -91,29 +89,27 @@ class _CorrespondenciasHTMLParser(HTMLParser):
             return
         if self._skip_depth > 0:
             return
-        if tag_lower in ("td", "th") and self._in_cell:
-            cell_text = " ".join("".join(self._current_cell).split())
-            self._current_row.append((self._cell_is_header, cell_text))
-            self._in_cell = False
-            self._current_cell = []
-        elif tag_lower == "tr" and self._in_row:
-            if self._current_row:
-                self._current_table.append(self._current_row)
-            self._in_row = False
-            self._current_row = []
-        elif tag_lower == "table" and self._in_table:
-            if self._current_table:
-                self.tables.append(self._current_table)
-            self._in_table = False
-            self._current_table = []
+        if tag_lower in ("td", "th") and self._cell_stack:
+            is_header, chunks = self._cell_stack.pop()
+            if self._row_stack:
+                cell_text = " ".join("".join(chunks).split())
+                self._row_stack[-1].append((is_header, cell_text))
+        elif tag_lower == "tr" and self._row_stack:
+            row = self._row_stack.pop()
+            if row and self._table_stack:
+                self._table_stack[-1].append(row)
+        elif tag_lower == "table" and self._table_stack:
+            table = self._table_stack.pop()
+            if table:
+                self.tables.append(table)
         elif tag_lower in ("p", "div", "h1", "h2", "h3", "h4", "li"):
             self._text_parts.append("\n")
 
     def handle_data(self, data: str) -> None:
         if self._skip_depth > 0:
             return
-        if self._in_cell:
-            self._current_cell.append(data)
+        if self._cell_stack:
+            self._cell_stack[-1][1].append(data)
         self._text_parts.append(data)
 
     @property
@@ -124,7 +120,10 @@ class _CorrespondenciasHTMLParser(HTMLParser):
         return "\n".join(line for line in lines if line)
 
 
-def _parse_minutes(raw_time: str) -> tuple[int, bool] | None:
+def _parse_minutes(
+    raw_time: str,
+    estimation_time: datetime | None = None,
+) -> tuple[int, bool] | None:
     """Parse arrival ETA text into (minutes, is_approximate)."""
     text = " ".join(raw_time.split()).strip()
     if not text:
@@ -133,6 +132,20 @@ def _parse_minutes(raw_time: str) -> tuple[int, bool] | None:
 
     if any(marker in norm for marker in ("en parada", "llegando", "inminente", "< 1", "<1")):
         return (0, False)
+
+    # Handle explicit HH:MM scheduled clock time without misreading HH as minutes
+    clock_match = _CLOCK_TIME_RE.match(text)
+    if clock_match:
+        if estimation_time is None:
+            return None
+        hour, minute = int(clock_match.group(1)), int(clock_match.group(2))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return None
+        candidate = estimation_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate < estimation_time - timedelta(minutes=2):
+            candidate += timedelta(days=1)
+        delta_minutes = max(0, int((candidate - estimation_time).total_seconds() // 60))
+        return (delta_minutes, False)
 
     hm_match = _HOURS_MINUTES_RE.search(norm)
     if hm_match and "h" in norm:
@@ -155,6 +168,8 @@ def _parse_line_cell(raw_line: str) -> tuple[str, str]:
     cleaned = " ".join(raw_line.split()).strip()
     if not cleaned:
         return ("", "")
+
+    cleaned = re.sub(r"^l[ií]nea\s+", "", cleaned, flags=re.IGNORECASE)
 
     # Common separator: "238 - ROUTE NAME" or "238-ROUTE NAME"
     sep_match = re.match(r"^([A-Za-z0-9]+)\s*[-–—:]\s*(.+)$", cleaned)
@@ -198,7 +213,7 @@ def _extract_arrivals_table(
             texts = [text for _, text in row]
             if len(texts) < 3:
                 continue
-            parsed_time = _parse_minutes(texts[0])
+            parsed_time = _parse_minutes(texts[0], estimation_time)
             if parsed_time is None:
                 continue
             minutes, is_approx = parsed_time
@@ -249,9 +264,12 @@ def parse_correspondencias_html(
 
     # Extract stop name & optional verified stop ID from page heading
     stop_name_raw: str | None = None
+    has_empty_stop_header = False
     header_match = _STOP_HEADER_RE.search(plain_text)
     if header_match:
         stop_name_raw = header_match.group(1).strip()
+    elif _EMPTY_STOP_HEADER_RE.search(plain_text):
+        has_empty_stop_header = True
     else:
         corresp_match = _CORRESP_HEADER_RE.search(plain_text)
         if corresp_match:
@@ -282,6 +300,10 @@ def parse_correspondencias_html(
 
     found_table, arrivals = _extract_arrivals_table(parser.tables, estimation_time)
 
+    # Detect TITSA PHP response for unknown stop IDs ("INFORMACIÓN PARADA  (99999)" with no buses)
+    if has_empty_stop_header and not arrivals:
+        raise TitsaStopNotFoundError(stop_id)
+
     # Validate that this page is actually a TITSA stop page
     has_no_buses_notice = any(marker in norm_text for marker in _NO_BUSES_MARKERS)
     if not found_table and not estimation_from_server and not stop_name_raw:
@@ -289,7 +311,6 @@ def parse_correspondencias_html(
             f"Unexpected HTML structure for stop {stop_id}: missing header, table, and estimation"
         )
 
-    # If stop heading literally had an empty name like "INFORMACIÓN PARADA  (99999)" with no buses
     if (
         stop_name_raw is None
         and not arrivals

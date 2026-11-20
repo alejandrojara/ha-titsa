@@ -151,6 +151,7 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
                     self.schedule_entity,
                     self.stop_id,
                 )
+                self._consecutive_errors = 0
                 self.async_set_updated_data(self._build_paused_data())
 
         self._unsub_schedule = async_track_state_change_event(

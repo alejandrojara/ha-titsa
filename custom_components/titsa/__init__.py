@@ -10,12 +10,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 
 from .api import TitsaOpenDataClient, TitsaRealtimeProvider, TitsaWebProvider
 from .catalog import TitsaCatalogStore
 from .const import (
     HTTP_TIMEOUT_SECONDS,
     MAX_CONCURRENT_REQUESTS,
+    STORAGE_KEY,
+    STORAGE_VERSION,
     SUBENTRY_TYPE_STOP,
     USER_AGENT,
 )
@@ -58,13 +61,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: TitsaConfigEntry) -> boo
     catalog.start_background_gtfs_refresh()
 
     coordinators: dict[str, TitsaStopCoordinator] = {}
-    for subentry in entry.subentries.values():
-        if subentry.subentry_type != SUBENTRY_TYPE_STOP:
-            continue
-        coordinator = TitsaStopCoordinator(hass, entry, subentry, provider)
-        coordinator.async_setup_schedule_listener()
-        await coordinator.async_config_entry_first_refresh()
-        coordinators[subentry.subentry_id] = coordinator
+    try:
+        for subentry in entry.subentries.values():
+            if subentry.subentry_type != SUBENTRY_TYPE_STOP:
+                continue
+            coordinator = TitsaStopCoordinator(hass, entry, subentry, provider)
+            coordinators[subentry.subentry_id] = coordinator
+
+        if coordinators:
+            await asyncio.gather(
+                *(
+                    coordinator.async_config_entry_first_refresh()
+                    for coordinator in coordinators.values()
+                )
+            )
+            for coordinator in coordinators.values():
+                coordinator.async_setup_schedule_listener()
+    except BaseException:
+        catalog.cancel_background_tasks()
+        for coordinator in coordinators.values():
+            coordinator.async_cleanup()
+        raise
 
     entry.runtime_data = TitsaRuntimeData(
         provider=provider,
@@ -85,6 +102,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: TitsaConfigEntry) -> bo
     for coordinator in runtime_data.coordinators.values():
         coordinator.async_cleanup()
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: TitsaConfigEntry) -> None:
+    """Remove cached Open Data storage when the parent TITSA entry is deleted."""
+    store: Store[dict] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    await store.async_remove()
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: TitsaConfigEntry) -> None:

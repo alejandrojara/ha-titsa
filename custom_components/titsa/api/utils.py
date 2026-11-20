@@ -53,14 +53,15 @@ def clean_titsa_stop_name(raw: str) -> str:
     if not collapsed:
         return ""
     # Normalize dotted abbreviations without space like "STA.CRUZ" -> "STA. CRUZ"
-    collapsed = re.sub(r"\.(?=[^\s.)])", ". ", collapsed)
+    # without breaking single-letter dotted acronyms like "U.L.L."
+    collapsed = re.sub(r"\.(?=[A-ZÁÉÍÓÚÜÑ]{2})", ". ", collapsed)
     if collapsed != collapsed.upper():
         return collapsed
 
     words = collapsed.split(" ")
     result: list[str] = []
     for idx, token in enumerate(words):
-        if token in _PRESERVE_UPPER:
+        if token in _PRESERVE_UPPER or re.fullmatch(r"(?:[A-ZÁÉÍÓÚÜÑ]\.){2,}", token):
             result.append(token)
             continue
         lower = token.lower()

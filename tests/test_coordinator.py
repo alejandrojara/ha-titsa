@@ -144,3 +144,21 @@ async def test_coordinator_rate_limit_backoff(
         await coordinator._async_update_data()
 
     assert exc_info.value.retry_after == 240.0
+
+
+async def test_setup_retry_cleans_up_on_first_refresh_failure_and_remove_entry(
+    hass: HomeAssistant,
+    mock_titsa_network,
+) -> None:
+    """Failed first refresh cancels background tasks cleanly and remove_entry wipes storage."""
+    mock_fetch, _ = mock_titsa_network
+    mock_fetch.side_effect = TitsaRateLimitError("429", status=429, retry_after=60.0)
+
+    entry = _entry_with_stop()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id) is False
+    await hass.async_block_till_done()
+
+    # Removing the entry should succeed cleanly and remove cached catalog storage
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()

@@ -115,6 +115,7 @@ def test_utils_cleaning_and_sorting() -> None:
     assert clean_titsa_stop_name("ARICO EL VIEJO (T)") == "Arico el Viejo (T)"
     assert clean_titsa_stop_name("INTERCAMBIADOR STA.CRUZ") == "Intercambiador Sta. Cruz"
     assert clean_titsa_stop_name("AEROPUERTO TFS") == "Aeropuerto TFS"
+    assert clean_titsa_stop_name("CAMPUS U.L.L.") == "Campus U.L.L."
 
     assert normalize_line_code("015") == "15"
     assert normalize_line_code("030a") == "30A"

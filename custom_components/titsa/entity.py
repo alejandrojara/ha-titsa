@@ -21,7 +21,8 @@ class TitsaStopEntity(CoordinatorEntity[TitsaStopCoordinator]):
             identifiers={(DOMAIN, coordinator.subentry.subentry_id)},
             name=coordinator.subentry.title or coordinator.stop_name,
             manufacturer="TITSA",
-            model=f"Parada {coordinator.stop_id}",
+            model="TITSA Bus Stop",
+            serial_number=coordinator.stop_id,
             entry_type=DeviceEntryType.SERVICE,
             configuration_url=STOP_WEB_URL_TEMPLATE.format(stop_id=coordinator.stop_id),
         )

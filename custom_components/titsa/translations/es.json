@@ -20,6 +20,7 @@
       },
       "abort": {
         "already_configured": "Esta parada ya está configurada.",
+        "entry_not_loaded": "La integración de TITSA debe estar cargada antes de añadir o reconfigurar paradas.",
         "reconfigure_successful": "Se ha actualizado la configuración de la parada."
       },
       "error": {

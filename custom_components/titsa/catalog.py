@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import logging
 from pathlib import Path
 import tempfile
+import time
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -26,6 +27,7 @@ from .api import (
 from .const import CATALOG_REFRESH_INTERVAL, STORAGE_KEY, STORAGE_VERSION
 
 _LOGGER = logging.getLogger(__name__)
+CSV_FAILURE_BACKOFF_SECONDS = 300.0
 
 
 def _is_stale(iso_timestamp: str | None) -> bool:
@@ -61,6 +63,7 @@ class TitsaCatalogStore:
         self._gtfs_lock = asyncio.Lock()
         self._gtfs_ready_event = asyncio.Event()
         self._gtfs_task: asyncio.Task[None] | None = None
+        self._csv_last_failure_monotonic: float | None = None
 
     @property
     def data(self) -> CatalogData:
@@ -88,6 +91,11 @@ class TitsaCatalogStore:
                 self._gtfs_ready_event.set()
         self._loaded = True
 
+    def _is_csv_in_failure_backoff(self) -> bool:
+        if self._csv_last_failure_monotonic is None:
+            return False
+        return (time.monotonic() - self._csv_last_failure_monotonic) < CSV_FAILURE_BACKOFF_SECONDS
+
     async def async_ensure_csv_fresh(self, *, force: bool = False) -> bool:
         """Ensure lightweight stops (329 KB) and lines (22 KB) CSVs are loaded and fresh."""
         await self.async_load()
@@ -98,6 +106,8 @@ class TitsaCatalogStore:
             and not _is_stale(self._data.csv_updated_at)
         ):
             return True
+        if not force and self._is_csv_in_failure_backoff():
+            return bool(self._data.stops)
 
         async with self._csv_lock:
             if (
@@ -107,18 +117,22 @@ class TitsaCatalogStore:
                 and not _is_stale(self._data.csv_updated_at)
             ):
                 return True
+            if not force and self._is_csv_in_failure_backoff():
+                return bool(self._data.stops)
             try:
                 stops, lines = await asyncio.gather(
                     self._client.async_fetch_stops(),
                     self._client.async_fetch_lines(),
                 )
             except TitsaError as err:
+                self._csv_last_failure_monotonic = time.monotonic()
                 _LOGGER.warning(
                     "Unable to refresh TITSA Open Data CSV catalog (continuing with cache): %s",
                     err,
                 )
                 return bool(self._data.stops)
 
+            self._csv_last_failure_monotonic = None
             self._data.stops = stops
             self._data.lines = lines
             self._data.csv_updated_at = datetime.now(UTC).isoformat()

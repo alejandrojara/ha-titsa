@@ -226,3 +226,18 @@ async def test_stop_subentry_flow_live_validation_when_catalog_empty(
 
     # Clean unload should succeed and cancel background tasks/listeners
     assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+
+async def test_stop_subentry_flow_aborts_when_entry_not_loaded(
+    hass: HomeAssistant,
+) -> None:
+    """Subentry flow aborts gracefully if parent entry is not loaded."""
+    entry = MockConfigEntry(domain=DOMAIN, title="TITSA", data={})
+    entry.add_to_hass(hass)
+
+    flow = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_STOP),
+        context={"source": SOURCE_USER},
+    )
+    assert flow["type"] is FlowResultType.ABORT
+    assert flow["reason"] == "entry_not_loaded"

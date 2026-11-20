@@ -67,6 +67,8 @@ Cada parada crea su propio **Dispositivo** en Home Assistant con:
 | `sensor.<parada>_linea_<N>` | `sensor` (`timestamp`) | Creado **solo para cada línea seleccionada en el filtro**. Expone `line`, `destination`, `minutes`, `following_arrivals` y `polling_paused`. |
 | `button.<parada>_actualizar` | `button` | Refresco puntual bajo demanda (funciona también con la ventana horaria en pausa; *cooldown* de 30 s). |
 
+> Los `entity_id` se generan automáticamente en el idioma de tu Home Assistant (en español `_proxima_guagua`, `_linea_<N>`, `_actualizar`; en inglés `_next_bus`, `_line_<N>`, `_refresh`).
+
 ### Estructura del atributo `arrivals`
 
 ```json
@@ -94,8 +96,9 @@ title: 🚌 Nuevo Obrero (1580)
 content: >
   {% set entity = 'sensor.nuevo_obrero_1580_proxima_guagua' %}
   {% set paused = state_attr(entity, 'polling_paused') %}
+  {% set manual = state_attr(entity, 'manual_snapshot') %}
   {% set arrivals = state_attr(entity, 'arrivals') or [] %}
-  {% if paused and arrivals | length == 0 %}
+  {% if paused and not manual and arrivals | length == 0 %}
   ⏸️ **Sondeo en pausa** (fuera de ventana horaria). Pulsa *Actualizar* para consultar ahora.
   {% elif arrivals | length == 0 %}
   Sin llegadas estimadas en este momento.
@@ -103,7 +106,7 @@ content: >
   | Línea | Destino | Llegada |
   | :---: | :--- | :---: |
   {% for bus in arrivals[:6] -%}
-  | **{{ bus.line }}** | {{ bus.destination }} | {% if bus.minutes == 0 %}**Ahora**{% else %}{{ bus.minutes }} min{% endif %} |
+  | **{{ bus.line }}** | {{ bus.destination }} | {% if bus.minutes == 0 %}**Ahora**{% else %}{% if bus.is_approximate %}>{% endif %}{{ bus.minutes }} min{% endif %} |
   {% endfor %}
   {% endif %}
 ```
@@ -130,7 +133,10 @@ cards:
     name: Actualizar ahora
     icon: mdi:refresh
     tap_action:
-      action: toggle
+      action: perform-action
+      perform_action: button.press
+      target:
+        entity_id: button.nuevo_obrero_1580_actualizar
 ```
 
 ---

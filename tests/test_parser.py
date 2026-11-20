@@ -115,3 +115,34 @@ def test_parse_correspondencias_invalid_and_empty_inputs() -> None:
             "<html><body><p>Error: No existe la parada solicitada.</p></body></html>",
             "99999",
         )
+
+    # PHP page with empty stop name before (99999) and no arrivals -> unknown stop
+    with pytest.raises(TitsaStopNotFoundError):
+        parse_correspondencias_html(
+            "<html><body><h1>INFORMACIÓN PARADA  (99999)</h1>"
+            "<p>Estimación: 20/11/2026 10:00:00</p></body></html>",
+            "99999",
+        )
+
+
+def test_parse_nested_tables_and_clock_time_and_linea_prefix() -> None:
+    """Handle layout tables wrapping the arrivals table, HH:MM times, and 'Línea ' prefix."""
+    html = """
+    <html><body>
+      <table class="layout">
+        <tr><td>
+          <h1>INFORMACIÓN PARADA NUEVO OBRERO (1580)</h1>
+          <table>
+            <tr><th>Tiempo llegada</th><th>Línea</th><th>Destino</th></tr>
+            <tr><td>10:15</td><td>Línea 238 - INTERCAMBIADOR</td><td>INTERCAMBIADOR STA.CRUZ</td></tr>
+          </table>
+          <p>Estimación: 20/11/2026 09:56:32</p>
+        </td></tr>
+      </table>
+    </body></html>
+    """
+    result = parse_correspondencias_html(html, "1580")
+    assert result.stop_name == "Nuevo Obrero"
+    assert len(result.arrivals) == 1
+    assert result.arrivals[0].line == "238"
+    assert result.arrivals[0].minutes == 18

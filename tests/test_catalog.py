@@ -93,6 +93,14 @@ async def test_catalog_survives_open_data_outage(hass: HomeAssistant) -> None:
 
     catalog = TitsaCatalogStore(hass, client)
     assert await catalog.async_ensure_csv_fresh() is False
+    assert client.async_fetch_stops.call_count == 1
+    # Backoff prevents hammering datos.tenerife.es on immediate retry
+    assert await catalog.async_ensure_csv_fresh() is False
+    assert client.async_fetch_stops.call_count == 1
+    # Explicit force=True bypasses backoff
+    assert await catalog.async_ensure_csv_fresh(force=True) is False
+    assert client.async_fetch_stops.call_count == 2
+
     assert await catalog.async_refresh_gtfs_index() is False
     assert catalog.has_stops is False
     assert catalog.has_gtfs_index is False
