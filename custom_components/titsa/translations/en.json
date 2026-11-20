@@ -55,13 +55,15 @@
           "description": "Selected stop: {stop_name} ({stop_id}). Choose optional line filters and schedule window below, or enable 'Search for a different stop' to go back.",
           "data": {
             "lines": "Filter lines (optional)",
+            "manual_only": "Manual / automation updates only (0 background requests)",
             "schedule_entity": "Active schedule / window entity (optional)",
             "name": "Custom display name in Home Assistant (alias)",
             "search_again": "Search for a different stop (go back)"
           },
           "data_description": {
             "lines": "Select specific valid lines for this stop. An individual sensor is created for each selected line; leave empty to track all lines with a single aggregated sensor.",
-            "schedule_entity": "Optional Schedule, Binary Sensor, or Input Boolean helper. When off, polling pauses completely (0 HTTP requests) and entities stay unknown instead of unavailable.",
+            "manual_only": "Disables automatic periodic polling completely (0 background HTTP requests). Refresh arrivals on demand using the stop's Refresh button or an automation.",
+            "schedule_entity": "Optional Schedule, Binary Sensor, or Input Boolean helper (ignored if manual-only is enabled). When off, polling pauses completely (0 HTTP requests) and entities stay unknown instead of unavailable.",
             "name": "Only changes the device display name in Home Assistant; it does not change the selected bus stop.",
             "search_again": "Enable this option and submit to return to the stop search without saving."
           }

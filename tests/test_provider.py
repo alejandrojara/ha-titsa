@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
@@ -83,12 +84,11 @@ async def test_web_provider_503_and_404_and_network_error() -> None:
 
 
 async def test_web_provider_ssl_fallback_on_incomplete_cert_chain(html_1580: str) -> None:
-    """Fall back lazily to unverified HTTPS session on ClientConnectorSSLError and reuse it."""
+    """Fall back lazily to unverified HTTPS session on ClientConnectorCertificateError and reuse it."""
     verified_session = MagicMock(spec=aiohttp.ClientSession)
     conn_key = MagicMock()
-    ssl_error = aiohttp.ClientConnectorSSLError(
-        conn_key, OSError("unable to get local issuer certificate")
-    )
+    cert_err = ssl.SSLCertVerificationError(1, "unable to get local issuer certificate")
+    ssl_error = aiohttp.ClientConnectorCertificateError(conn_key, cert_err)
     verified_session.get = MagicMock(side_effect=ssl_error)
 
     unverified_session = MagicMock(spec=aiohttp.ClientSession)

@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.titsa.const import (
     CONF_LINES,
+    CONF_MANUAL_ONLY,
     CONF_SCHEDULE_ENTITY,
     CONF_SEARCH_AGAIN,
     CONF_STOP_ID,
@@ -87,6 +88,7 @@ async def test_stop_subentry_flow_direct_code(
         CONF_STOP_ID: "1580",
         CONF_STOP_NAME: "Nuevo Obrero",
         CONF_LINES: ["238", "936"],
+        CONF_MANUAL_ONLY: False,
         CONF_SCHEDULE_ENTITY: "schedule.mananas",
     }
     await hass.async_block_till_done()

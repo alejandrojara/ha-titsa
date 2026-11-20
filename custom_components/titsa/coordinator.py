@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator per TITSA stop subentry with schedule window, jitter, and backoff."""
+"""DataUpdateCoordinator per TITSA stop subentry with schedule window, manual-only mode, jitter, and backoff."""
 
 from __future__ import annotations
 
@@ -34,6 +34,7 @@ from .api import (
 )
 from .const import (
     CONF_LINES,
+    CONF_MANUAL_ONLY,
     CONF_SCHEDULE_ENTITY,
     CONF_STOP_ID,
     CONF_STOP_NAME,
@@ -81,8 +82,11 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
             dict.fromkeys(norm for line in raw_lines if (norm := normalize_line_code(str(line))))
         )
         self._selected_lines_set: frozenset[str] = frozenset(self.selected_lines)
+        self.manual_only: bool = bool(subentry.data.get(CONF_MANUAL_ONLY, False))
         raw_schedule = subentry.data.get(CONF_SCHEDULE_ENTITY)
-        self.schedule_entity: str | None = str(raw_schedule).strip() if raw_schedule else None
+        self.schedule_entity: str | None = (
+            None if self.manual_only else (str(raw_schedule).strip() if raw_schedule else None)
+        )
 
         self._provider = provider
         self._consecutive_errors = 0
@@ -96,19 +100,21 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
             _LOGGER,
             config_entry=config_entry,
             name=f"{DOMAIN}_{self.stop_id}",
-            update_interval=self._next_poll_interval(),
+            update_interval=None if self.manual_only else self._next_poll_interval(),
             always_update=False,
         )
 
     @staticmethod
     def _next_poll_interval() -> timedelta:
-        """Return safe polling interval (90 s) with ±10 s random jitter."""
+        """Return safe polling interval (120 s) with ±10 s random jitter."""
         jitter = random.uniform(-POLL_JITTER_SECONDS, POLL_JITTER_SECONDS)
         return timedelta(seconds=DEFAULT_SCAN_INTERVAL_SECONDS + jitter)
 
     @property
     def is_polling_active(self) -> bool:
-        """Return True if polling is allowed right now based on optional schedule entity."""
+        """Return True if automatic polling is allowed right now."""
+        if self.manual_only:
+            return False
         if not self.schedule_entity:
             return True
         state = self.hass.states.get(self.schedule_entity)
@@ -128,7 +134,7 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
 
     def async_setup_schedule_listener(self) -> None:
         """Start listening to the optional schedule/binary_sensor entity."""
-        if not self.schedule_entity or self._unsub_schedule is not None:
+        if self.manual_only or not self.schedule_entity or self._unsub_schedule is not None:
             return
 
         @callback
@@ -178,12 +184,17 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
         one_shot = self._force_one_shot
         self._force_one_shot = False
 
-        # Re-jitter next interval to keep requests smoothly staggered
-        self.update_interval = self._next_poll_interval()
+        # Re-jitter next interval for automatic polling; never enable timer in manual-only mode
+        if not self.manual_only:
+            self.update_interval = self._next_poll_interval()
 
         polling_active = self.is_polling_active
         if not polling_active and not one_shot:
-            _LOGGER.debug("Skipping HTTP poll for stop %s (outside schedule window)", self.stop_id)
+            _LOGGER.debug(
+                "Skipping HTTP poll for stop %s (%s)",
+                self.stop_id,
+                "manual-only mode" if self.manual_only else "outside schedule window",
+            )
             return self._build_paused_data()
 
         try:
@@ -252,6 +263,7 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
             "stop_id": self.stop_id,
             "stop_name": self.stop_name,
             "selected_lines": list(self.selected_lines),
+            "manual_only": self.manual_only,
             "schedule_entity": self.schedule_entity,
             "schedule_state": schedule_state,
             "is_polling_active": self.is_polling_active,

@@ -13,6 +13,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.titsa.api import TitsaRateLimitError
 from custom_components.titsa.const import (
     CONF_LINES,
+    CONF_MANUAL_ONLY,
     CONF_SCHEDULE_ENTITY,
     CONF_STOP_ID,
     CONF_STOP_NAME,
@@ -25,12 +26,14 @@ def _entry_with_stop(
     *,
     lines: list[str] | None = None,
     schedule_entity: str | None = None,
+    manual_only: bool = False,
 ) -> MockConfigEntry:
     subentry = ConfigSubentry(
         data={
             CONF_STOP_ID: "1580",
             CONF_STOP_NAME: "Nuevo Obrero",
             CONF_LINES: lines or [],
+            CONF_MANUAL_ONLY: manual_only,
             CONF_SCHEDULE_ENTITY: schedule_entity,
         },
         subentry_type=SUBENTRY_TYPE_STOP,
@@ -162,3 +165,33 @@ async def test_setup_retry_cleans_up_on_first_refresh_failure_and_remove_entry(
     # Removing the entry should succeed cleanly and remove cached catalog storage
     await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
+
+
+async def test_manual_only_mode_disables_background_polling_permanently(
+    hass: HomeAssistant,
+    mock_titsa_network,
+) -> None:
+    """In manual_only mode, 0 HTTP requests occur on setup and update_interval stays None."""
+    mock_fetch, _ = mock_titsa_network
+
+    entry = _entry_with_stop(manual_only=True)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = next(iter(entry.runtime_data.coordinators.values()))
+    assert coordinator.manual_only is True
+    assert coordinator.update_interval is None
+    assert mock_fetch.call_count == 0
+
+    state = hass.states.get("sensor.nuevo_obrero_1580_next_bus")
+    assert state is not None
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["polling_paused"] is True
+
+    # Manual refresh fetches once and MUST keep update_interval as None
+    await coordinator.async_manual_refresh()
+    assert mock_fetch.call_count == 1
+    assert coordinator.update_interval is None
+    assert coordinator.data.manual_snapshot is True
+    assert len(coordinator.data.filtered_arrivals) == 4

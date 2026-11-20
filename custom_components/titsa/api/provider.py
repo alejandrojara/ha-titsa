@@ -7,6 +7,7 @@ import asyncio
 from collections.abc import Callable
 from datetime import datetime
 import logging
+import ssl
 
 import aiohttp
 
@@ -23,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_CORRESPONDENCIAS_URL = "https://titsa.com/correspondencias.php"
 DEFAULT_TIMEOUT_SECONDS = 12.0
-DEFAULT_USER_AGENT = "HomeAssistant-TITSA/20261120.1 (+https://github.com/alejandrojara/ha-titsa)"
+DEFAULT_USER_AGENT = "HomeAssistant-TITSA/20261120.2 (+https://github.com/alejandrojara/ha-titsa)"
 
 
 class TitsaRealtimeProvider(ABC):
@@ -121,7 +122,7 @@ class TitsaWebProvider(TitsaRealtimeProvider):
                 raw_bytes, charset = await self._async_fetch_raw(
                     self._get_active_session(), clean_stop_id
                 )
-            except aiohttp.ClientConnectorSSLError as ssl_err:
+            except (aiohttp.ClientSSLError, ssl.SSLError) as ssl_err:
                 if self._use_unverified_ssl or self._fallback_session_factory is None:
                     raise TitsaConnectionError(
                         f"TLS error fetching stop {clean_stop_id} from titsa.com: {ssl_err}"

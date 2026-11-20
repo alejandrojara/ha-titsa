@@ -40,6 +40,7 @@ from .api import (
 )
 from .const import (
     CONF_LINES,
+    CONF_MANUAL_ONLY,
     CONF_SCHEDULE_ENTITY,
     CONF_SEARCH_AGAIN,
     CONF_STOP_ID,
@@ -339,13 +340,17 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
 
             if not errors:
                 clean_lines = sorted(clean_lines_set, key=line_sort_key)
+                manual_only = bool(user_input.get(CONF_MANUAL_ONLY, False))
                 raw_schedule = user_input.get(CONF_SCHEDULE_ENTITY)
-                schedule_entity = str(raw_schedule).strip() if raw_schedule else None
+                schedule_entity = (
+                    None if manual_only else (str(raw_schedule).strip() if raw_schedule else None)
+                )
 
                 subentry_data: dict[str, Any] = {
                     CONF_STOP_ID: stop_id,
                     CONF_STOP_NAME: stop_name,
                     CONF_LINES: clean_lines,
+                    CONF_MANUAL_ONLY: manual_only,
                     CONF_SCHEDULE_ENTITY: schedule_entity,
                 }
 
@@ -377,6 +382,11 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
         suggested_values: dict[str, Any] = {
             CONF_NAME: default_name,
             CONF_LINES: existing_lines,
+            CONF_MANUAL_ONLY: (
+                bool(reconfigure_subentry.data.get(CONF_MANUAL_ONLY, False))
+                if reconfigure_subentry is not None
+                else False
+            ),
         }
         if reconfigure_subentry is not None and reconfigure_subentry.data.get(CONF_SCHEDULE_ENTITY):
             suggested_values[CONF_SCHEDULE_ENTITY] = reconfigure_subentry.data[CONF_SCHEDULE_ENTITY]
@@ -393,6 +403,7 @@ class TitsaStopSubentryFlow(ConfigSubentryFlow):
                     mode=SelectSelectorMode.DROPDOWN,
                 )
             ),
+            vol.Optional(CONF_MANUAL_ONLY, default=False): BooleanSelector(),
             vol.Optional(CONF_SCHEDULE_ENTITY): EntitySelector(
                 EntitySelectorConfig(domain=SCHEDULE_ENTITY_DOMAINS)
             ),

@@ -55,13 +55,15 @@
           "description": "Parada seleccionada: {stop_name} ({stop_id}). Elige las líneas y ventana horaria opcionales, o activa «Buscar otra parada» para volver al buscador sin guardar.",
           "data": {
             "lines": "Filtrar líneas (opcional)",
+            "manual_only": "Solo actualización manual / por automatización (0 peticiones en segundo plano)",
             "schedule_entity": "Entidad de ventana horaria activa (opcional)",
             "name": "Nombre personalizado en Home Assistant (alias)",
             "search_again": "Buscar otra parada (volver al buscador)"
           },
           "data_description": {
             "lines": "Selecciona líneas válidas de esta parada. Se creará un sensor individual por cada línea seleccionada; déjalo vacío para seguir todas con un único sensor agregado.",
-            "schedule_entity": "Helper opcional Schedule, Binary Sensor o Input Boolean. Cuando esté en off, el sondeo se pausa por completo (0 peticiones HTTP) y las entidades pasan a desconocido sin marcarse como no disponibles.",
+            "manual_only": "Desactiva por completo el sondeo automático (0 peticiones HTTP en segundo plano). Consulta llegadas solo al pulsar el botón Actualizar o desde una automatización.",
+            "schedule_entity": "Helper opcional Schedule, Binary Sensor o Input Boolean (se ignora si está activo el modo solo manual). Cuando esté en off, el sondeo se pausa por completo (0 peticiones HTTP) y las entidades pasan a desconocido sin marcarse como no disponibles.",
             "name": "Solo cambia el nombre visible del dispositivo en Home Assistant; no modifica la parada seleccionada.",
             "search_again": "Activa esta opción y pulsa Enviar para volver al buscador de paradas sin guardar."
           }

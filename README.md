@@ -25,8 +25,8 @@ Integración personalizada **no oficial** para **Home Assistant** que muestra lo
   * Un **sensor individual por cada línea filtrada** (ideal para tarjetas *Tile* y automatizaciones sin plantillas). Si dejas el filtro vacío, solo se crea el sensor agregado.
   * Botón **`Actualizar`** por parada (`button.<parada>_actualizar`) con *cooldown* mínimo de 30 s para consultas puntuales (incluso fuera de horario).
 * **Sondeo responsable con `titsa.com`:**
-  * Intervalo seguro (90 s ± 10 s de *jitter*), semáforo global de concurrencia, `User-Agent` honesto, `always_update=False` y *backoff* exponencial ante `429`/`5xx`.
-  * **Ventana horaria opcional:** vincula un Helper nativo (`schedule.*`, `binary_sensor.*` o `input_boolean.*`) para realizar **0 peticiones HTTP** fuera de tu franja horaria (las entidades pasan limpiamente a `unknown` con `polling_paused: true`, evitando falsos `unavailable` y cuentas atrás caducadas).
+  * Intervalo seguro (120 s ± 10 s de *jitter*), semáforo global de concurrencia, `User-Agent` honesto, `always_update=False` y *backoff* exponencial ante `429`/`5xx`.
+  * **Ventana horaria opcional y modo solo manual:** vincula un Helper nativo (`schedule.*`, `binary_sensor.*` o `input_boolean.*`) o activa **«Solo actualización manual / por automatización»** para realizar **0 peticiones HTTP** fuera de tu franja horaria o en segundo plano (las entidades pasan limpiamente a `unknown` con `polling_paused: true`, evitando falsos `unavailable` y cuentas atrás caducadas).
 * **Preparada para GTFS-RT:** cliente Python desacoplado (`custom_components/titsa/api/`) basado en *Strategy Pattern* (`TitsaRealtimeProvider`) para migrar limpiamente cuando TITSA publique el feed GTFS-RT oficial sin romper tus entidades ni automatizaciones.
 
 ---
@@ -149,7 +149,7 @@ cards:
 * **Componente no oficial y ausencia de afiliación:** `ha-titsa` es un software libre e independiente de la comunidad, **no oficial y sin soporte, respaldo ni vinculación comercial o técnica con Transportes Interurbanos de Tenerife, S.A. (TITSA) ni con el Cabildo Insular de Tenerife**. El nombre *TITSA* es una marca registrada de su respectivo titular y se emplea únicamente con fines descriptivos y de interoperabilidad para identificar el servicio de transporte consultado.
 * **Exclusión de garantías:** Esta integración se proporciona *«tal cual»* (*as is*), sin garantía de disponibilidad continua ni exactitud de las estimaciones, y puede verse afectada por cambios no anunciados en los servicios web externos.
 * **Catálogos de paradas, líneas y GTFS:** Datos Abiertos del **Cabildo Insular de Tenerife / TITSA** (`datos.tenerife.es`), publicados bajo licencia **[Creative Commons Attribution 4.0 (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/)**.
-* **Tiempos de llegada en tiempo real:** consultados directamente desde tu instancia local de Home Assistant hacia `titsa.com` (sin intermediarios ni redistribución a terceros), con sondeo limitado (90 s ± 10 s, semáforo de concurrencia, *backoff* exponencial) y soporte nativo de ventanas horarias (`schedule.*`) para minimizar la carga sobre el servicio público.
+* **Tiempos de llegada en tiempo real:** consultados directamente desde tu instancia local de Home Assistant hacia `titsa.com` (sin intermediarios ni redistribución a terceros), con sondeo limitado (120 s ± 10 s, semáforo de concurrencia, *backoff* exponencial), modo solo manual y soporte nativo de ventanas horarias (`schedule.*`) para minimizar la carga sobre el servicio público.
 
 ---
 

@@ -6,7 +6,7 @@ from datetime import timedelta
 
 DOMAIN = "titsa"
 INTEGRATION_NAME = "TITSA"
-VERSION = "20261120.1"
+VERSION = "20261120.2"
 
 SUBENTRY_TYPE_STOP = "stop"
 
@@ -16,10 +16,11 @@ CONF_STOP_NAME = "stop_name"
 CONF_STOP_QUERY = "stop_query"
 CONF_LINES = "lines"
 CONF_SCHEDULE_ENTITY = "schedule_entity"
+CONF_MANUAL_ONLY = "manual_only"
 CONF_SEARCH_AGAIN = "search_again"
 
 # Polling & protection constants
-DEFAULT_SCAN_INTERVAL_SECONDS = 90
+DEFAULT_SCAN_INTERVAL_SECONDS = 120
 POLL_JITTER_SECONDS = 10
 MAX_BACKOFF_SECONDS = 900
 MANUAL_REFRESH_COOLDOWN_SECONDS = 30.0
