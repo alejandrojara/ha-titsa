@@ -5,7 +5,10 @@
 [![HACS](https://github.com/alejandrojara/ha-titsa/actions/workflows/hacs.yml/badge.svg)](https://github.com/alejandrojara/ha-titsa/actions/workflows/hacs.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Integración personalizada para **Home Assistant** que muestra los tiempos de llegada en tiempo real de las guaguas de **TITSA (Tenerife)** combinando el catálogo oficial de **Datos Abiertos del Cabildo de Tenerife (CC BY 4.0)** con las estimaciones en vivo por parada.
+Integración personalizada **no oficial** para **Home Assistant** que muestra los tiempos de llegada en tiempo real de las guaguas de **TITSA (Tenerife)** combinando el catálogo oficial de **Datos Abiertos del Cabildo de Tenerife (CC BY 4.0)** con las estimaciones en vivo por parada.
+
+> [!IMPORTANT]
+> **Componente no oficial:** Este proyecto es una integración comunitaria independiente desarrollada por terceros. **No está afiliado, patrocinado, avalado ni soportado oficialmente por Transportes Interurbanos de Tenerife, S.A. (TITSA) ni por el Cabildo Insular de Tenerife.** Para soporte o incidencias técnicas de esta integración utiliza únicamente el [issue tracker de este repositorio](https://github.com/alejandrojara/ha-titsa/issues) y nunca los canales de atención al cliente de TITSA.
 
 > **Fase 2 (tarjeta personalizada estilo marquesina):** [`alejandrojara/ha-titsa-card`](https://github.com/alejandrojara/ha-titsa-card) *(próximamente)*. Esta integración funciona por sí sola con tarjetas nativas de Home Assistant (ejemplos incluidos abajo).
 
@@ -141,11 +144,12 @@ cards:
 
 ---
 
-## Atribución de datos y uso responsable
+## Aviso legal, atribución de datos y uso responsable
 
+* **Componente no oficial y ausencia de afiliación:** `ha-titsa` es un software libre e independiente de la comunidad, **no oficial y sin soporte, respaldo ni vinculación comercial o técnica con Transportes Interurbanos de Tenerife, S.A. (TITSA) ni con el Cabildo Insular de Tenerife**. El nombre *TITSA* es una marca registrada de su respectivo titular y se emplea únicamente con fines descriptivos y de interoperabilidad para identificar el servicio de transporte consultado.
+* **Exclusión de garantías:** Esta integración se proporciona *«tal cual»* (*as is*), sin garantía de disponibilidad continua ni exactitud de las estimaciones, y puede verse afectada por cambios no anunciados en los servicios web externos.
 * **Catálogos de paradas, líneas y GTFS:** Datos Abiertos del **Cabildo Insular de Tenerife / TITSA** (`datos.tenerife.es`), publicados bajo licencia **[Creative Commons Attribution 4.0 (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/)**.
-* **Tiempos de llegada en tiempo real:** consultados directamente desde tu instancia local de Home Assistant hacia `titsa.com` (sin intermediarios ni redistribución), con sondeo limitado y soporte nativo de ventanas horarias (`schedule.*`) para minimizar la carga sobre el servicio público.
-* Este proyecto es una integración comunitaria independiente y **no está afiliado oficialmente con TITSA ni con el Cabildo Insular de Tenerife**.
+* **Tiempos de llegada en tiempo real:** consultados directamente desde tu instancia local de Home Assistant hacia `titsa.com` (sin intermediarios ni redistribución a terceros), con sondeo limitado (90 s ± 10 s, semáforo de concurrencia, *backoff* exponencial) y soporte nativo de ventanas horarias (`schedule.*`) para minimizar la carga sobre el servicio público.
 
 ---
 

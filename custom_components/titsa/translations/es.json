@@ -7,7 +7,7 @@
     "step": {
       "user": {
         "title": "Configurar TITSA (Tenerife)",
-        "description": "Añade la integración de TITSA usando Datos Abiertos del Cabildo de Tenerife (CC BY 4.0) y tiempos de llegada en tiempo real. Una vez añadida, pulsa «Añadir parada» dentro de la integración para monitorizar una o más paradas."
+        "description": "Integración comunitaria no oficial para Home Assistant, sin afiliación, patrocinio ni soporte de Transportes Interurbanos de Tenerife, S.A. (TITSA) ni del Cabildo Insular de Tenerife. Utiliza Datos Abiertos oficiales (CC BY 4.0) y tiempos estimados de llegada en tiempo real. Una vez añadida, pulsa «Añadir parada» dentro de la integración para monitorizar una o más paradas."
       }
     }
   },

@@ -7,7 +7,7 @@
     "step": {
       "user": {
         "title": "Set up TITSA (Tenerife)",
-        "description": "Adds the TITSA hub integration using Cabildo de Tenerife Open Data (CC BY 4.0) and real-time stop arrivals. Once added, use 'Add stop' inside the integration to monitor one or more bus stops."
+        "description": "Independent, unofficial Home Assistant community integration, not affiliated with, endorsed, or supported by Transportes Interurbanos de Tenerife, S.A. (TITSA) or Cabildo Insular de Tenerife. Uses official Open Data (CC BY 4.0) and real-time stop arrival estimates. Once added, use 'Add stop' inside the integration to monitor one or more bus stops."
       }
     }
   },
