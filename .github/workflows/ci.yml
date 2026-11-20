@@ -9,15 +9,15 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.14"
 
       - name: Install test & lint dependencies
         run: |
-          uv venv --python 3.14 .venv
+          uv venv --clear --python 3.14 .venv
           uv pip install --python .venv/bin/python pytest-homeassistant-custom-component ruff mypy
 
       - name: Lint with ruff
