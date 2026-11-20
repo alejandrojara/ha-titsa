@@ -93,6 +93,8 @@ Cada parada crea su propio **Dispositivo** en Home Assistant con:
 
 ### 1. Tarjeta Markdown estilo marquesina (sin tarjetas personalizadas)
 
+Pulsa directamente sobre la tarjeta para lanzar una actualización puntual bajo demanda (respetando el *cooldown* de 30 s):
+
 ```yaml
 type: markdown
 title: 🚌 Nuevo Obrero (1580)
@@ -102,7 +104,7 @@ content: |
   {%- set manual = state_attr(entity, 'manual_snapshot') -%}
   {%- set arrivals = state_attr(entity, 'arrivals') or [] -%}
   {%- if paused and not manual and arrivals | length == 0 -%}
-  ⏸️ **Sondeo en pausa** (fuera de ventana horaria). Pulsa *Actualizar* para consultar ahora.
+  ⏸️ **Sondeo en pausa** (fuera de ventana horaria o modo manual). Pulsa aquí para consultar ahora.
   {%- elif arrivals | length == 0 -%}
   Sin llegadas estimadas en este momento.
   {%- else %}
@@ -112,6 +114,11 @@ content: |
   | **{{ bus.line }}** | {{ bus.destination }} | {% if bus.minutes == 0 %}**Ahora**{% else %}{% if bus.is_approximate %}>{% endif %}{{ bus.minutes }} min{% endif %} |
   {%- endfor %}
   {%- endif %}
+tap_action:
+  action: perform-action
+  perform_action: button.press
+  target:
+    entity_id: button.nuevo_obrero_1580_actualizar
 ```
 
 ### 2. Tarjetas Tile nativas por línea + botón de refresco
