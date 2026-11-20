@@ -10,7 +10,7 @@ Integración personalizada **no oficial** para **Home Assistant** que muestra lo
 > [!IMPORTANT]
 > **Componente no oficial:** Este proyecto es una integración comunitaria independiente desarrollada por terceros. **No está afiliado, patrocinado, avalado ni soportado oficialmente por Transportes Interurbanos de Tenerife, S.A. (TITSA) ni por el Cabildo Insular de Tenerife.** Para soporte o incidencias técnicas de esta integración utiliza únicamente el [issue tracker de este repositorio](https://github.com/alejandrojara/ha-titsa/issues) y nunca los canales de atención al cliente de TITSA.
 
-> **Fase 2 (tarjeta personalizada estilo marquesina):** [`alejandrojara/ha-titsa-card`](https://github.com/alejandrojara/ha-titsa-card) *(próximamente)*. Esta integración funciona por sí sola con tarjetas nativas de Home Assistant (ejemplos incluidos abajo).
+> **Tarjeta personalizada recomendada (estilo marquesina TITSA):** [`alejandrojara/ha-titsa-card`](https://github.com/alejandrojara/ha-titsa-card) (instalable vía HACS, con editor visual 100 % sin YAML). Esta integración también funciona por sí sola con tarjetas nativas de Home Assistant (ejemplos incluidos abajo).
 
 ---
 
