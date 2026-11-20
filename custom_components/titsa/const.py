@@ -6,7 +6,7 @@ from datetime import timedelta
 
 DOMAIN = "titsa"
 INTEGRATION_NAME = "TITSA"
-VERSION = "20261120.2"
+VERSION = "20261120.3"
 
 SUBENTRY_TYPE_STOP = "stop"
 

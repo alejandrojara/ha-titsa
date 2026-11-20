@@ -96,22 +96,22 @@ Cada parada crea su propio **Dispositivo** en Home Assistant con:
 ```yaml
 type: markdown
 title: 🚌 Nuevo Obrero (1580)
-content: >
-  {% set entity = 'sensor.nuevo_obrero_1580_proxima_guagua' %}
-  {% set paused = state_attr(entity, 'polling_paused') %}
-  {% set manual = state_attr(entity, 'manual_snapshot') %}
-  {% set arrivals = state_attr(entity, 'arrivals') or [] %}
-  {% if paused and not manual and arrivals | length == 0 %}
+content: |
+  {%- set entity = 'sensor.nuevo_obrero_1580_proxima_guagua' -%}
+  {%- set paused = state_attr(entity, 'polling_paused') -%}
+  {%- set manual = state_attr(entity, 'manual_snapshot') -%}
+  {%- set arrivals = state_attr(entity, 'arrivals') or [] -%}
+  {%- if paused and not manual and arrivals | length == 0 -%}
   ⏸️ **Sondeo en pausa** (fuera de ventana horaria). Pulsa *Actualizar* para consultar ahora.
-  {% elif arrivals | length == 0 %}
+  {%- elif arrivals | length == 0 -%}
   Sin llegadas estimadas en este momento.
-  {% else %}
+  {%- else %}
   | Línea | Destino | Llegada |
   | :---: | :--- | :---: |
-  {% for bus in arrivals[:6] -%}
+  {%- for bus in arrivals[:6] %}
   | **{{ bus.line }}** | {{ bus.destination }} | {% if bus.minutes == 0 %}**Ahora**{% else %}{% if bus.is_approximate %}>{% endif %}{{ bus.minutes }} min{% endif %} |
-  {% endfor %}
-  {% endif %}
+  {%- endfor %}
+  {%- endif %}
 ```
 
 ### 2. Tarjetas Tile nativas por línea + botón de refresco

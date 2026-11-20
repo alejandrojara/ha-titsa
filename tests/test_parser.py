@@ -35,7 +35,11 @@ def test_api_package_has_no_homeassistant_imports() -> None:
 
 def test_parse_correspondencias_1580(html_1580: str) -> None:
     """Parse real-world Nuevo Obrero (1580) HTML fixture."""
-    result = parse_correspondencias_html(html_1580, "1580")
+    result = parse_correspondencias_html(
+        html_1580,
+        "1580",
+        now=datetime(2026, 11, 20, 9, 56, 35, tzinfo=CANARY_TZ),
+    )
 
     assert result.stop_id == "1580"
     assert result.stop_name == "Nuevo Obrero"
@@ -62,7 +66,11 @@ def test_parse_correspondencias_1580(html_1580: str) -> None:
 
 def test_parse_correspondencias_empty(html_empty: str) -> None:
     """Parse valid stop page with no arriving buses."""
-    result = parse_correspondencias_html(html_empty, "1106")
+    result = parse_correspondencias_html(
+        html_empty,
+        "1106",
+        now=datetime(2026, 11, 20, 3, 15, 5, tzinfo=CANARY_TZ),
+    )
 
     assert result.stop_id == "1106"
     assert result.stop_name == "Boca Cangrejo"
@@ -146,3 +154,104 @@ def test_parse_nested_tables_and_clock_time_and_linea_prefix() -> None:
     assert len(result.arrivals) == 1
     assert result.arrivals[0].line == "238"
     assert result.arrivals[0].minutes == 18
+
+
+def test_parse_12h_php_estimation_disambiguation() -> None:
+    """Resolve TITSA PHP's 12-hour Estimación clock bug for afternoon and midnight."""
+    # Real case from stop 9386 at 13:55:23: TITSA prints '01:55:23'
+    pm_html = """
+    <html><body>
+      <h1>INFORMACIÓN PARADA TRES DE MAYO (9386)</h1>
+      <table>
+        <tr><th>Tiempo llegada</th><th>Línea</th><th>Destino</th></tr>
+        <tr><td>0 minutos</td><td>937 - INTERCAMBIADOR</td><td>CRUCE DEL SOBRADILLO</td></tr>
+        <tr><td>1 minutos</td><td>15 - SANTA CRUZ - LA LAGUNA</td><td>INTERCAMBIADOR LAGUNA</td></tr>
+        <tr><td>27 minutos</td><td>238 - INTERCAMBIADOR</td><td>SAN MATIAS</td></tr>
+      </table>
+      <p>Estimación: 20/11/2026 01:55:23</p>
+    </body></html>
+    """
+    pm_now = datetime(2026, 11, 20, 13, 55, 24, tzinfo=CANARY_TZ)
+    pm_res = parse_correspondencias_html(pm_html, "9386", now=pm_now)
+    assert pm_res.estimation_time == datetime(2026, 11, 20, 13, 55, 23, tzinfo=CANARY_TZ)
+    assert pm_res.arrivals[0].estimated_arrival == datetime(
+        2026, 11, 20, 13, 55, 23, tzinfo=CANARY_TZ
+    )
+    assert pm_res.arrivals[1].minutes == 1
+    assert pm_res.arrivals[2].estimated_arrival == datetime(
+        2026, 11, 20, 14, 22, 23, tzinfo=CANARY_TZ
+    )
+
+    # Midnight case at 00:15:10: PHP 'h' prints '12:15:10'
+    midnight_html = pm_html.replace("20/11/2026 01:55:23", "21/11/2026 12:15:10")
+    midnight_now = datetime(2026, 11, 21, 0, 15, 12, tzinfo=CANARY_TZ)
+    midnight_res = parse_correspondencias_html(midnight_html, "9386", now=midnight_now)
+    assert midnight_res.estimation_time == datetime(2026, 11, 21, 0, 15, 10, tzinfo=CANARY_TZ)
+
+    # Noon 12:15 stays 12:15
+    noon_now = datetime(2026, 11, 21, 12, 15, 12, tzinfo=CANARY_TZ)
+    noon_res = parse_correspondencias_html(midnight_html, "9386", now=noon_now)
+    assert noon_res.estimation_time == datetime(2026, 11, 21, 12, 15, 10, tzinfo=CANARY_TZ)
+
+    # True 24h timestamp (if TITSA fixes PHP in the future) stays untouched
+    h24_html = pm_html.replace("20/11/2026 01:55:23", "20/11/2026 15:40:00")
+    h24_now = datetime(2026, 11, 20, 15, 40, 2, tzinfo=CANARY_TZ)
+    h24_res = parse_correspondencias_html(h24_html, "9386", now=h24_now)
+    assert h24_res.estimation_time == datetime(2026, 11, 20, 15, 40, 0, tzinfo=CANARY_TZ)
+
+
+def test_parse_unclosed_td_tags_preserves_column_order() -> None:
+    """Handle old PHP HTML with missing </td> closing tags without inverting columns."""
+    html = """
+    <html><body>
+      <h1>INFORMACIÓN PARADA TRES DE MAYO (9386)</h1>
+      <table>
+        <tr><th>Tiempo llegada</th><th>Línea</th><th>Destino</th></tr>
+        <tr>
+          <td>0 minutos</td>
+          <td><b>15</b> - SANTA CRUZ - LA LAGUNA (DIRECTA)
+          <td><b>INTERCAMBIADOR LAGUNA</b></td></td>
+        </tr>
+        <tr>
+          <td>1 minutos
+          <td><b>231</b> - INTERCAMBIADOR SANTA CRUZ - LA GALLEGA (DIRECTO)
+          <td><b>EL CARDONAL - LA GALLEGA</b>
+        </tr>
+      </table>
+      <p>Estimación: 20/11/2026 01:55:23</p>
+    </body></html>
+    """
+    result = parse_correspondencias_html(
+        html, "9386", now=datetime(2026, 11, 20, 13, 55, 25, tzinfo=CANARY_TZ)
+    )
+    assert len(result.arrivals) == 2
+    assert result.arrivals[0].line == "15"
+    assert result.arrivals[0].line_name == "SANTA CRUZ - LA LAGUNA (DIRECTA)"
+    assert result.arrivals[0].destination == "INTERCAMBIADOR LAGUNA"
+    assert result.arrivals[1].line == "231"
+    assert result.arrivals[1].destination == "EL CARDONAL - LA GALLEGA"
+
+
+def test_parse_swapped_destino_and_linea_columns() -> None:
+    """Correctly parse arrivals even if HTML columns list Destino before Línea."""
+    html = """
+    <html><body>
+      <h1>INFORMACIÓN PARADA TRES DE MAYO (9386)</h1>
+      <table>
+        <tr><th>Tiempo llegada</th><th>Destino</th><th>Línea</th></tr>
+        <tr>
+          <td>2 minutos</td>
+          <td>PUNTA DEL HIDALGO</td>
+          <td>105 - SANTA CRUZ - PUNTA DEL HIDALGO - POR LA LAGUNA</td>
+        </tr>
+      </table>
+      <p>Estimación: 20/11/2026 01:55:23</p>
+    </body></html>
+    """
+    result = parse_correspondencias_html(
+        html, "9386", now=datetime(2026, 11, 20, 13, 55, 25, tzinfo=CANARY_TZ)
+    )
+    assert len(result.arrivals) == 1
+    assert result.arrivals[0].line == "105"
+    assert result.arrivals[0].destination == "PUNTA DEL HIDALGO"
+    assert result.arrivals[0].minutes == 2

@@ -24,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_CORRESPONDENCIAS_URL = "https://titsa.com/correspondencias.php"
 DEFAULT_TIMEOUT_SECONDS = 12.0
-DEFAULT_USER_AGENT = "HomeAssistant-TITSA/20261120.2 (+https://github.com/alejandrojara/ha-titsa)"
+DEFAULT_USER_AGENT = "HomeAssistant-TITSA/20261120.3 (+https://github.com/alejandrojara/ha-titsa)"
 
 
 class TitsaRealtimeProvider(ABC):
@@ -128,9 +128,9 @@ class TitsaWebProvider(TitsaRealtimeProvider):
                         f"TLS error fetching stop {clean_stop_id} from titsa.com: {ssl_err}"
                     ) from ssl_err
 
-                _LOGGER.warning(
+                _LOGGER.info(
                     "TLS certificate verification failed for %s (%s); "
-                    "falling back to unverified HTTPS session for public TITSA arrival tables",
+                    "using unverified HTTPS session for public TITSA arrival tables",
                     self._base_url,
                     ssl_err,
                 )

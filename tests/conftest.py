@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from custom_components.titsa.api import (
+    CANARY_TZ,
     LineInfo,
     StopArrivals,
     StopInfo,
@@ -47,7 +49,11 @@ def html_edge() -> str:
 @pytest.fixture
 def sample_arrivals_1580(html_1580: str) -> StopArrivals:
     """Return parsed StopArrivals for stop 1580."""
-    return parse_correspondencias_html(html_1580, "1580")
+    return parse_correspondencias_html(
+        html_1580,
+        "1580",
+        now=datetime(2026, 11, 20, 9, 56, 35, tzinfo=CANARY_TZ),
+    )
 
 
 @pytest.fixture

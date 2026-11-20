@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
 import re
@@ -35,6 +36,9 @@ _HOURS_MINUTES_RE = re.compile(
     re.IGNORECASE,
 )
 _MINUTES_RE = re.compile(r"([<>+])?\s*(\d+)\s*(?:min(?:utos?)?|m\b)?", re.IGNORECASE)
+_LINE_CELL_HINT_RE = re.compile(
+    r"^(?:l[ií]nea\s+)?\d{1,4}[A-Za-z]?(?:\s*[-–—:]|\s*$)", re.IGNORECASE
+)
 _NOT_FOUND_MARKERS = (
     "no existe la parada",
     "parada no encontrada",
@@ -52,15 +56,40 @@ _NO_BUSES_MARKERS = (
 )
 
 
+@dataclass(slots=True)
+class _TableState:
+    """Mutable parse state for a single HTML table (supports nested tables and unclosed tags)."""
+
+    rows: list[list[tuple[bool, str]]] = field(default_factory=list)
+    current_row: list[tuple[bool, str]] | None = None
+    current_cell_header: bool = False
+    current_cell_chunks: list[str] | None = None
+
+    def flush_cell(self) -> None:
+        """Close and append the currently open cell, if any."""
+        if self.current_cell_chunks is None:
+            return
+        if self.current_row is None:
+            self.current_row = []
+        cell_text = " ".join("".join(self.current_cell_chunks).split())
+        self.current_row.append((self.current_cell_header, cell_text))
+        self.current_cell_chunks = None
+
+    def flush_row(self) -> None:
+        """Close any open cell and append the current row, if non-empty."""
+        self.flush_cell()
+        if self.current_row:
+            self.rows.append(self.current_row)
+        self.current_row = None
+
+
 class _CorrespondenciasHTMLParser(HTMLParser):
-    """Collect tables (including nested tables) and visible text from correspondencias.php HTML."""
+    """Collect HTML tables (handling nested tables and unclosed td/th/tr) and visible text."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self._skip_depth = 0
-        self._table_stack: list[list[list[tuple[bool, str]]]] = []
-        self._row_stack: list[list[tuple[bool, str]]] = []
-        self._cell_stack: list[tuple[bool, list[str]]] = []
+        self._table_stack: list[_TableState] = []
         self.tables: list[list[list[tuple[bool, str]]]] = []
         self._text_parts: list[str] = []
 
@@ -72,12 +101,21 @@ class _CorrespondenciasHTMLParser(HTMLParser):
         if self._skip_depth > 0:
             return
         if tag_lower == "table":
-            self._table_stack.append([])
+            self._table_stack.append(_TableState())
         elif tag_lower == "tr" and self._table_stack:
-            self._row_stack.append([])
+            table = self._table_stack[-1]
+            # HTML5 implicit close of previous <tr> if unclosed
+            table.flush_row()
+            table.current_row = []
             self._text_parts.append("\n")
-        elif tag_lower in ("td", "th") and self._row_stack:
-            self._cell_stack.append((tag_lower == "th", []))
+        elif tag_lower in ("td", "th") and self._table_stack:
+            table = self._table_stack[-1]
+            if table.current_row is None:
+                table.current_row = []
+            # HTML5 implicit close of previous <td>/<th> in same row (prevents LIFO inversion!)
+            table.flush_cell()
+            table.current_cell_header = tag_lower == "th"
+            table.current_cell_chunks = []
         elif tag_lower in ("br", "p", "div", "h1", "h2", "h3", "h4", "li"):
             self._text_parts.append("\n")
 
@@ -89,28 +127,33 @@ class _CorrespondenciasHTMLParser(HTMLParser):
             return
         if self._skip_depth > 0:
             return
-        if tag_lower in ("td", "th") and self._cell_stack:
-            is_header, chunks = self._cell_stack.pop()
-            if self._row_stack:
-                cell_text = " ".join("".join(chunks).split())
-                self._row_stack[-1].append((is_header, cell_text))
-        elif tag_lower == "tr" and self._row_stack:
-            row = self._row_stack.pop()
-            if row and self._table_stack:
-                self._table_stack[-1].append(row)
+        if tag_lower in ("td", "th") and self._table_stack:
+            self._table_stack[-1].flush_cell()
+        elif tag_lower == "tr" and self._table_stack:
+            self._table_stack[-1].flush_row()
         elif tag_lower == "table" and self._table_stack:
             table = self._table_stack.pop()
-            if table:
-                self.tables.append(table)
+            table.flush_row()
+            if table.rows:
+                self.tables.append(table.rows)
         elif tag_lower in ("p", "div", "h1", "h2", "h3", "h4", "li"):
             self._text_parts.append("\n")
 
     def handle_data(self, data: str) -> None:
         if self._skip_depth > 0:
             return
-        if self._cell_stack:
-            self._cell_stack[-1][1].append(data)
+        if self._table_stack and self._table_stack[-1].current_cell_chunks is not None:
+            self._table_stack[-1].current_cell_chunks.append(data)
         self._text_parts.append(data)
+
+    def close(self) -> None:
+        """Flush any unclosed tables at EOF."""
+        super().close()
+        while self._table_stack:
+            table = self._table_stack.pop()
+            table.flush_row()
+            if table.rows:
+                self.tables.append(table.rows)
 
     @property
     def plain_text(self) -> str:
@@ -194,6 +237,20 @@ def _is_header_row(row: list[tuple[bool, str]]) -> bool:
     return "tiempo" in joined and ("linea" in joined or "destino" in joined)
 
 
+def _detect_column_indices(row: list[tuple[bool, str]]) -> tuple[int, int, int]:
+    """Infer (time_idx, line_idx, dest_idx) from a header row."""
+    time_idx, line_idx, dest_idx = 0, 1, 2
+    for idx, (_, text) in enumerate(row):
+        norm = normalize_text(text)
+        if "tiempo" in norm or "llegada" in norm:
+            time_idx = idx
+        elif "linea" in norm:
+            line_idx = idx
+        elif "destino" in norm:
+            dest_idx = idx
+    return (time_idx, line_idx, dest_idx)
+
+
 def _extract_arrivals_table(
     tables: list[list[list[tuple[bool, str]]]],
     estimation_time: datetime,
@@ -205,22 +262,33 @@ def _extract_arrivals_table(
     for table in tables:
         has_expected_header = any(_is_header_row(row) for row in table)
         table_arrivals: list[BusArrival] = []
+        time_idx, line_idx, dest_idx = 0, 1, 2
 
         for row in table:
             if _is_header_row(row):
                 found_correspondencias_table = True
+                time_idx, line_idx, dest_idx = _detect_column_indices(row)
                 continue
             texts = [text for _, text in row]
-            if len(texts) < 3:
+            if len(texts) < 3 or max(time_idx, line_idx, dest_idx) >= len(texts):
                 continue
-            parsed_time = _parse_minutes(texts[0], estimation_time)
+            parsed_time = _parse_minutes(texts[time_idx], estimation_time)
             if parsed_time is None:
                 continue
             minutes, is_approx = parsed_time
-            line_code, line_name = _parse_line_cell(texts[1])
+
+            line_raw = texts[line_idx]
+            dest_raw = texts[dest_idx]
+            # Defense in depth: if line_raw doesn't start with a line code while dest_raw does, swap
+            if not _LINE_CELL_HINT_RE.match(line_raw.strip()) and _LINE_CELL_HINT_RE.match(
+                dest_raw.strip()
+            ):
+                line_raw, dest_raw = dest_raw, line_raw
+
+            line_code, line_name = _parse_line_cell(line_raw)
             if not line_code:
                 continue
-            destination = " ".join(texts[2].split()).strip()
+            destination = " ".join(dest_raw.split()).strip()
             est_arrival = estimation_time + timedelta(minutes=minutes)
             table_arrivals.append(
                 BusArrival(
@@ -240,6 +308,32 @@ def _extract_arrivals_table(
 
     arrivals.sort(key=lambda item: item.minutes)
     return found_correspondencias_table, arrivals
+
+
+def _resolve_12h_estimation_time(parsed: datetime, ref_now: datetime) -> datetime:
+    """Resolve TITSA PHP's 12-hour clock bug ('h' instead of 'H' without AM/PM).
+
+    titsa.com/correspondencias.php prints 01:00..12:59 for both AM and PM
+    (e.g. '01:55:23' at 13:55:23, or '12:15:00' at 00:15:00). If the parsed
+    hour is in 1..12 and is >6h away from ref_now while a ±12h shift lands
+    within ±30 min of ref_now, apply the shift. Historical fixtures or future
+    24h server timestamps remain untouched.
+    """
+    if not (1 <= parsed.hour <= 12):
+        return parsed
+
+    base_delta = abs((parsed - ref_now).total_seconds())
+    if base_delta <= 6 * 3600:
+        return parsed
+
+    candidates = (
+        parsed + timedelta(hours=12),
+        parsed - timedelta(hours=12),
+    )
+    best = min(candidates, key=lambda dt: abs((dt - ref_now).total_seconds()))
+    if abs((best - ref_now).total_seconds()) <= 30 * 60:
+        return best
+    return parsed
 
 
 def parse_correspondencias_html(
@@ -275,6 +369,9 @@ def parse_correspondencias_html(
         if corresp_match:
             stop_name_raw = corresp_match.group(1).strip()
 
+    ref = now if now is not None else datetime.now(CANARY_TZ)
+    ref_now = ref.astimezone(CANARY_TZ) if ref.tzinfo else ref.replace(tzinfo=CANARY_TZ)
+
     # Extract exact server estimation timestamp in Atlantic/Canary timezone
     estimation_from_server = False
     est_match = _ESTIMATION_RE.search(plain_text)
@@ -288,15 +385,15 @@ def parse_correspondencias_html(
             int(est_match.group(6) or 0),
         )
         try:
-            estimation_time = datetime(year, month, day, hour, minute, second, tzinfo=CANARY_TZ)
+            raw_estimation = datetime(year, month, day, hour, minute, second, tzinfo=CANARY_TZ)
+            estimation_time = _resolve_12h_estimation_time(raw_estimation, ref_now)
             estimation_from_server = True
         except ValueError as err:
             raise TitsaParseError(
                 f"Invalid estimation timestamp for stop {stop_id}: {err}"
             ) from err
     else:
-        ref = now if now is not None else datetime.now(CANARY_TZ)
-        estimation_time = ref.astimezone(CANARY_TZ) if ref.tzinfo else ref.replace(tzinfo=CANARY_TZ)
+        estimation_time = ref_now
 
     found_table, arrivals = _extract_arrivals_table(parser.tables, estimation_time)
 
