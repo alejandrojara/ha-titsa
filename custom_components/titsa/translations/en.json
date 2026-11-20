@@ -1,0 +1,84 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "TITSA is already configured. Add or manage bus stops directly from the existing TITSA integration.",
+      "single_instance_allowed": "TITSA is already configured. Add or manage bus stops directly from the existing TITSA integration."
+    },
+    "step": {
+      "user": {
+        "title": "Set up TITSA (Tenerife)",
+        "description": "Adds the TITSA hub integration using Cabildo de Tenerife Open Data (CC BY 4.0) and real-time stop arrivals. Once added, use 'Add stop' inside the integration to monitor one or more bus stops."
+      }
+    }
+  },
+  "config_subentries": {
+    "stop": {
+      "entry_type": "Bus stop",
+      "initiate_flow": {
+        "user": "Add stop",
+        "reconfigure": "Reconfigure stop"
+      },
+      "abort": {
+        "already_configured": "This bus stop is already configured.",
+        "reconfigure_successful": "Bus stop settings were updated."
+      },
+      "error": {
+        "cannot_connect": "Could not connect to TITSA. Please try again in a moment.",
+        "stop_not_found": "No matching bus stop was found. Check the stop code or try a different name."
+      },
+      "step": {
+        "user": {
+          "title": "Find a TITSA bus stop",
+          "description": "Enter the numeric stop code (e.g. 1580) or search by stop name (e.g. Nuevo Obrero).",
+          "data": {
+            "stop_query": "Stop code or name"
+          },
+          "data_description": {
+            "stop_query": "Stop code from the bus shelter or part of the stop name."
+          }
+        },
+        "select_stop": {
+          "title": "Select bus stop",
+          "description": "Multiple stops matched your search. Choose the exact stop (check the stop code and routes for the right direction).",
+          "data": {
+            "stop_id": "Bus stop"
+          }
+        },
+        "configure": {
+          "title": "Configure stop {stop_id}",
+          "description": "Configure monitoring options for {stop_name} ({stop_id}). Leave lines empty to follow all lines arriving at this stop.",
+          "data": {
+            "name": "Stop name",
+            "lines": "Filter lines (optional)",
+            "schedule_entity": "Active schedule / window entity (optional)"
+          },
+          "data_description": {
+            "name": "Display name for this stop device in Home Assistant.",
+            "lines": "Select specific lines to filter. An individual sensor is created for each selected line; leave empty to track all lines with a single aggregated sensor.",
+            "schedule_entity": "Optional Schedule, Binary Sensor, or Input Boolean helper. When off, polling pauses completely (0 HTTP requests) and entities stay unknown instead of unavailable."
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh": {
+        "name": "Refresh"
+      }
+    },
+    "sensor": {
+      "next_bus": {
+        "name": "Next bus"
+      },
+      "line_next_bus": {
+        "name": "Line {line}"
+      }
+    }
+  },
+  "exceptions": {
+    "refresh_cooldown": {
+      "message": "Please wait {seconds} seconds before refreshing this stop again."
+    }
+  }
+}

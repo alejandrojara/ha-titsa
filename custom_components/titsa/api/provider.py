@@ -1,0 +1,105 @@
+"""Realtime arrival providers using the Strategy Pattern (Web today, GTFS-RT tomorrow)."""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+import asyncio
+from datetime import datetime
+
+import aiohttp
+
+from .exceptions import (
+    TitsaConnectionError,
+    TitsaRateLimitError,
+    TitsaStopNotFoundError,
+)
+from .models import StopArrivals
+from .parser import parse_correspondencias_html
+from .utils import parse_retry_after
+
+DEFAULT_CORRESPONDENCIAS_URL = "https://titsa.com/correspondencias.php"
+DEFAULT_TIMEOUT_SECONDS = 12.0
+DEFAULT_USER_AGENT = "HomeAssistant-TITSA/0.1.0 (+https://github.com/alejandrojara/ha-titsa)"
+
+
+class TitsaRealtimeProvider(ABC):
+    """Abstract strategy for fetching real-time arrivals at a TITSA bus stop."""
+
+    @abstractmethod
+    async def async_get_stop_arrivals(self, stop_id: str) -> StopArrivals:
+        """Fetch real-time bus arrivals for a specific stop ID."""
+
+
+class TitsaWebProvider(TitsaRealtimeProvider):
+    """Web provider scraping the lightweight static table at titsa.com/correspondencias.php."""
+
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        *,
+        semaphore: asyncio.Semaphore | None = None,
+        base_url: str = DEFAULT_CORRESPONDENCIAS_URL,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        user_agent: str = DEFAULT_USER_AGENT,
+    ) -> None:
+        """Initialize the web provider."""
+        self._session = session
+        self._semaphore = semaphore or asyncio.Semaphore(2)
+        self._base_url = base_url
+        self._timeout = aiohttp.ClientTimeout(total=timeout)
+        self._headers = {
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "es-ES,es;q=0.9",
+        }
+
+    async def async_get_stop_arrivals(
+        self,
+        stop_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> StopArrivals:
+        """Fetch and parse real-time arrivals for a TITSA stop."""
+        clean_stop_id = str(stop_id).strip()
+        async with self._semaphore:
+            try:
+                async with self._session.get(
+                    self._base_url,
+                    params={"idc": clean_stop_id},
+                    headers=self._headers,
+                    timeout=self._timeout,
+                ) as response:
+                    if response.status == 429:
+                        retry_after = parse_retry_after(response.headers.get("Retry-After"))
+                        raise TitsaRateLimitError(
+                            f"Rate limited by titsa.com (HTTP 429) for stop {clean_stop_id}",
+                            status=429,
+                            retry_after=retry_after,
+                        )
+                    if response.status == 404:
+                        raise TitsaStopNotFoundError(clean_stop_id)
+                    if response.status >= 500:
+                        retry_after = parse_retry_after(response.headers.get("Retry-After"))
+                        raise TitsaConnectionError(
+                            f"Server error HTTP {response.status} from titsa.com for stop {clean_stop_id}",
+                            status=response.status,
+                            retry_after=retry_after,
+                        )
+                    if response.status != 200:
+                        raise TitsaConnectionError(
+                            f"Unexpected HTTP {response.status} from titsa.com for stop {clean_stop_id}",
+                            status=response.status,
+                        )
+                    raw_bytes = await response.read()
+                    charset = response.charset or "utf-8"
+            except (TimeoutError, aiohttp.ClientError) as err:
+                raise TitsaConnectionError(
+                    f"Connection error fetching stop {clean_stop_id} from titsa.com: {err}"
+                ) from err
+
+        try:
+            html = raw_bytes.decode(charset)
+        except (LookupError, UnicodeDecodeError):
+            html = raw_bytes.decode("latin-1", errors="replace")
+
+        return parse_correspondencias_html(html, clean_stop_id, now=now)

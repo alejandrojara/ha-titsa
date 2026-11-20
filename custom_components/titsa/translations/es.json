@@ -1,0 +1,84 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "TITSA ya está configurada. Añade o gestiona paradas directamente desde la integración de TITSA existente.",
+      "single_instance_allowed": "TITSA ya está configurada. Añade o gestiona paradas directamente desde la integración de TITSA existente."
+    },
+    "step": {
+      "user": {
+        "title": "Configurar TITSA (Tenerife)",
+        "description": "Añade la integración de TITSA usando Datos Abiertos del Cabildo de Tenerife (CC BY 4.0) y tiempos de llegada en tiempo real. Una vez añadida, pulsa «Añadir parada» dentro de la integración para monitorizar una o más paradas."
+      }
+    }
+  },
+  "config_subentries": {
+    "stop": {
+      "entry_type": "Parada",
+      "initiate_flow": {
+        "user": "Añadir parada",
+        "reconfigure": "Reconfigurar parada"
+      },
+      "abort": {
+        "already_configured": "Esta parada ya está configurada.",
+        "reconfigure_successful": "Se ha actualizado la configuración de la parada."
+      },
+      "error": {
+        "cannot_connect": "No se pudo conectar con TITSA. Inténtalo de nuevo en unos instantes.",
+        "stop_not_found": "No se encontró ninguna parada coincidente. Comprueba el código de parada o prueba con otro nombre."
+      },
+      "step": {
+        "user": {
+          "title": "Buscar parada de TITSA",
+          "description": "Introduce el código numérico de la parada (por ejemplo, 1580) o busca por nombre (por ejemplo, Nuevo Obrero).",
+          "data": {
+            "stop_query": "Código o nombre de parada"
+          },
+          "data_description": {
+            "stop_query": "Código visible en la marquesina o parte del nombre de la parada."
+          }
+        },
+        "select_stop": {
+          "title": "Seleccionar parada",
+          "description": "Varias paradas coinciden con tu búsqueda. Elige la parada exacta comprobando el código y las líneas de tu sentido.",
+          "data": {
+            "stop_id": "Parada"
+          }
+        },
+        "configure": {
+          "title": "Configurar parada {stop_id}",
+          "description": "Configura las opciones de seguimiento para {stop_name} ({stop_id}). Deja las líneas vacías para seguir todas las guaguas que pasen por la parada.",
+          "data": {
+            "name": "Nombre de la parada",
+            "lines": "Filtrar líneas (opcional)",
+            "schedule_entity": "Entidad de ventana horaria activa (opcional)"
+          },
+          "data_description": {
+            "name": "Nombre visible para el dispositivo de esta parada en Home Assistant.",
+            "lines": "Selecciona líneas concretas para filtrar. Se creará un sensor individual por cada línea seleccionada; déjalo vacío para seguir todas con un único sensor agregado.",
+            "schedule_entity": "Helper opcional Schedule, Binary Sensor o Input Boolean. Cuando esté en off, el sondeo se pausa por completo (0 peticiones HTTP) y las entidades pasan a desconocido sin marcarse como no disponibles."
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh": {
+        "name": "Actualizar"
+      }
+    },
+    "sensor": {
+      "next_bus": {
+        "name": "Próxima guagua"
+      },
+      "line_next_bus": {
+        "name": "Línea {line}"
+      }
+    }
+  },
+  "exceptions": {
+    "refresh_cooldown": {
+      "message": "Espera {seconds} segundos antes de volver a actualizar esta parada."
+    }
+  }
+}
