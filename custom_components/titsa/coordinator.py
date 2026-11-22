@@ -19,8 +19,9 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import (
     BusArrival,
@@ -41,6 +42,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
     MANUAL_REFRESH_COOLDOWN_SECONDS,
+    MANUAL_SNAPSHOT_TTL_SECONDS,
     MAX_BACKOFF_SECONDS,
     POLL_JITTER_SECONDS,
 )
@@ -94,6 +96,8 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
         self._force_one_shot = False
         self._last_estimation_time: datetime | None = None
         self._unsub_schedule: CALLBACK_TYPE | None = None
+        self._unsub_manual_expiry: CALLBACK_TYPE | None = None
+        self._manual_snapshot_expires_at: datetime | None = None
 
         super().__init__(
             hass,
@@ -132,6 +136,42 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
             manual_snapshot=False,
         )
 
+    def _cancel_manual_expiry(self) -> None:
+        """Cancel any pending manual snapshot expiry timer."""
+        if self._unsub_manual_expiry is not None:
+            self._unsub_manual_expiry()
+            self._unsub_manual_expiry = None
+        self._manual_snapshot_expires_at = None
+
+    def _schedule_manual_expiry(self) -> None:
+        """Automatically expire a paused manual snapshot after MANUAL_SNAPSHOT_TTL_SECONDS."""
+        self._cancel_manual_expiry()
+        self._manual_snapshot_expires_at = dt_util.utcnow() + timedelta(
+            seconds=MANUAL_SNAPSHOT_TTL_SECONDS
+        )
+
+        @callback
+        def _handle_manual_expiry(_now: datetime) -> None:
+            self._unsub_manual_expiry = None
+            self._manual_snapshot_expires_at = None
+            if (
+                not self.is_polling_active
+                and self.data is not None
+                and self.data.manual_snapshot
+            ):
+                _LOGGER.debug(
+                    "Manual snapshot expired for stop %s after %ss; returning to paused state",
+                    self.stop_id,
+                    MANUAL_SNAPSHOT_TTL_SECONDS,
+                )
+                self.async_set_updated_data(self._build_paused_data())
+
+        self._unsub_manual_expiry = async_call_later(
+            self.hass,
+            MANUAL_SNAPSHOT_TTL_SECONDS,
+            _handle_manual_expiry,
+        )
+
     def async_setup_schedule_listener(self) -> None:
         """Start listening to the optional schedule/binary_sensor entity."""
         if self.manual_only or not self.schedule_entity or self._unsub_schedule is not None:
@@ -150,6 +190,7 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
                     self.schedule_entity,
                     self.stop_id,
                 )
+                self._cancel_manual_expiry()
                 self.hass.async_create_task(self.async_request_refresh())
             elif not new_active and old_active:
                 _LOGGER.debug(
@@ -157,6 +198,7 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
                     self.schedule_entity,
                     self.stop_id,
                 )
+                self._cancel_manual_expiry()
                 self._consecutive_errors = 0
                 self.async_set_updated_data(self._build_paused_data())
 
@@ -167,7 +209,8 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
         )
 
     def async_cleanup(self) -> None:
-        """Unsubscribe listeners when unloading the coordinator."""
+        """Unsubscribe listeners and timers when unloading the coordinator."""
+        self._cancel_manual_expiry()
         if self._unsub_schedule is not None:
             self._unsub_schedule()
             self._unsub_schedule = None
@@ -190,6 +233,16 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
 
         polling_active = self.is_polling_active
         if not polling_active and not one_shot:
+            # Preserve an active manual snapshot until its TTL timer expires
+            if (
+                self.data is not None
+                and self.data.manual_snapshot
+                and self._manual_snapshot_expires_at is not None
+                and dt_util.utcnow() < self._manual_snapshot_expires_at
+            ):
+                return self.data
+
+            self._cancel_manual_expiry()
             _LOGGER.debug(
                 "Skipping HTTP poll for stop %s (%s)",
                 self.stop_id,
@@ -221,6 +274,12 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
             self.stop_name = snapshot.stop_name
 
         filtered = snapshot.filter_lines(self._selected_lines_set)
+        is_manual_snapshot = one_shot and not polling_active
+        if is_manual_snapshot:
+            self._schedule_manual_expiry()
+        else:
+            self._cancel_manual_expiry()
+
         return TitsaStopData(
             stop_id=self.stop_id,
             stop_name=self.stop_name,
@@ -228,7 +287,7 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
             arrivals=snapshot.arrivals,
             filtered_arrivals=filtered,
             polling_paused=not polling_active,
-            manual_snapshot=one_shot and not polling_active,
+            manual_snapshot=is_manual_snapshot,
         )
 
     async def async_manual_refresh(self) -> None:

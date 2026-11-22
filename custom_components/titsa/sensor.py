@@ -136,7 +136,9 @@ class TitsaLineNextBusSensor(TitsaStopEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:bus"
     _attr_translation_key = "line_next_bus"
-    _unrecorded_attributes = frozenset({"following_arrivals", "last_estimation", "line_name"})
+    _unrecorded_attributes = frozenset(
+        {"following_arrivals", "last_estimation", "line_name", "manual_snapshot"}
+    )
 
     def __init__(self, coordinator: TitsaStopCoordinator, line_code: str) -> None:
         """Initialize the per-line sensor."""
@@ -186,4 +188,5 @@ class TitsaLineNextBusSensor(TitsaStopEntity, SensorEntity):
                 data.estimation_time.isoformat() if data and data.estimation_time else None
             ),
             "polling_paused": data.polling_paused if data else False,
+            "manual_snapshot": data.manual_snapshot if data else False,
         }

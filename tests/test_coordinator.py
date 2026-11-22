@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util import dt as dt_util
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.titsa.api import TitsaRateLimitError
 from custom_components.titsa.const import (
@@ -18,6 +24,7 @@ from custom_components.titsa.const import (
     CONF_STOP_ID,
     CONF_STOP_NAME,
     DOMAIN,
+    MANUAL_SNAPSHOT_TTL_SECONDS,
     SUBENTRY_TYPE_STOP,
 )
 
@@ -195,3 +202,71 @@ async def test_manual_only_mode_disables_background_polling_permanently(
     assert coordinator.update_interval is None
     assert coordinator.data.manual_snapshot is True
     assert len(coordinator.data.filtered_arrivals) == 4
+
+    # After MANUAL_SNAPSHOT_TTL_SECONDS (3 min), snapshot expires cleanly to paused (0 HTTP calls)
+    async_fire_time_changed(
+        hass, dt_util.utcnow() + timedelta(seconds=MANUAL_SNAPSHOT_TTL_SECONDS + 1)
+    )
+    await hass.async_block_till_done()
+
+    assert mock_fetch.call_count == 1
+    assert coordinator.update_interval is None
+    assert coordinator.data.polling_paused is True
+    assert coordinator.data.manual_snapshot is False
+    assert coordinator.data.filtered_arrivals == ()
+
+    state = hass.states.get("sensor.nuevo_obrero_1580_next_bus")
+    assert state is not None
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["arrivals"] == []
+    assert state.attributes["polling_paused"] is True
+    assert state.attributes["manual_snapshot"] is False
+
+
+async def test_schedule_off_manual_snapshot_expires_after_ttl(
+    hass: HomeAssistant,
+    mock_titsa_network,
+) -> None:
+    """In schedule-off mode, manual snapshot stays valid until TTL and then returns to paused."""
+    mock_fetch, _ = mock_titsa_network
+    hass.states.async_set("schedule.mananas", STATE_OFF)
+
+    entry = _entry_with_stop(lines=["238"], schedule_entity="schedule.mananas")
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = next(iter(entry.runtime_data.coordinators.values()))
+    await coordinator.async_manual_refresh()
+    await hass.async_block_till_done()
+
+    assert mock_fetch.call_count == 1
+    assert coordinator.data.manual_snapshot is True
+    assert len(coordinator.data.filtered_arrivals) == 1
+
+    # Intermediate coordinator refresh before TTL expires must preserve the fresh manual snapshot
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert mock_fetch.call_count == 1
+    assert coordinator.data.manual_snapshot is True
+    assert len(coordinator.data.filtered_arrivals) == 1
+
+    # Once TTL elapses, both aggregated and per-line sensors return cleanly to paused/unknown
+    async_fire_time_changed(
+        hass, dt_util.utcnow() + timedelta(seconds=MANUAL_SNAPSHOT_TTL_SECONDS + 1)
+    )
+    await hass.async_block_till_done()
+
+    assert mock_fetch.call_count == 1
+    stop_state = hass.states.get("sensor.nuevo_obrero_1580_next_bus")
+    line_state = hass.states.get("sensor.nuevo_obrero_1580_line_238")
+    assert stop_state is not None
+    assert stop_state.state == STATE_UNKNOWN
+    assert stop_state.attributes["polling_paused"] is True
+    assert stop_state.attributes["manual_snapshot"] is False
+    assert stop_state.attributes["arrivals"] == []
+    assert line_state is not None
+    assert line_state.state == STATE_UNKNOWN
+    assert line_state.attributes["polling_paused"] is True
+    assert line_state.attributes["manual_snapshot"] is False
+
