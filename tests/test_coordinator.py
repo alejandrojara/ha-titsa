@@ -269,4 +269,3 @@ async def test_schedule_off_manual_snapshot_expires_after_ttl(
     assert line_state.state == STATE_UNKNOWN
     assert line_state.attributes["polling_paused"] is True
     assert line_state.attributes["manual_snapshot"] is False
-

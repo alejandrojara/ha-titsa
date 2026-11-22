@@ -154,11 +154,7 @@ class TitsaStopCoordinator(DataUpdateCoordinator[TitsaStopData]):
         def _handle_manual_expiry(_now: datetime) -> None:
             self._unsub_manual_expiry = None
             self._manual_snapshot_expires_at = None
-            if (
-                not self.is_polling_active
-                and self.data is not None
-                and self.data.manual_snapshot
-            ):
+            if not self.is_polling_active and self.data is not None and self.data.manual_snapshot:
                 _LOGGER.debug(
                     "Manual snapshot expired for stop %s after %ss; returning to paused state",
                     self.stop_id,
